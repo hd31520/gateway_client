@@ -136,7 +136,7 @@ pre { overflow: auto; min-height: 220px; margin: 0; border-radius: 24px; padding
 .float-card small { display: block; color: var(--muted); font-weight: 800; }
 .float-card strong { display: block; font-size: 18px; }
 .float-card.one { right: 0; top: 70px; }
-.float-card.two { left: 0; bottom: 80px; }
+.float-card.two { left: 0; bottom: 20px; }
 .line-burst { position: absolute; inset: auto 26px 28px auto; display: grid; gap: 6px; opacity: .42; }
 .line-burst span { display: block; width: 130px; height: 3px; border-radius: 999px; background: linear-gradient(90deg, transparent, var(--green), var(--amber), transparent); animation: line-run 2.6s ease-in-out infinite; }
 .line-burst span:nth-child(even) { animation-delay: .4s; transform: translateX(-30px); }
@@ -348,6 +348,7 @@ td small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px
   .top-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .hero-section { min-height: auto; padding: 24px; }
   .hero-visual { min-height: 390px; }
+  .float-card.two { bottom: 12px; }
   .feature-grid, .pricing-grid, .step-grid, .updates-grid, .metric-grid, .portal-grid-two, .wallet-grid, .mini-stat-grid, .auth-grid, .admin-filters, .admin-filters.single { grid-template-columns: 1fr; }
   .portal-main { padding: 14px; }
   .portal-topbar, .section-title, .website-card-top, .website-meta, .api-key-line { align-items: stretch; flex-direction: column; }
