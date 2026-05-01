@@ -149,6 +149,14 @@ function isAdminAccount(account) {
   return role === 'admin';
 }
 
+function computePlanAmount(siteCount) {
+  const n = Number(siteCount || 1) || 1;
+  if (n <= 1) return 60;
+  if (n <= 5) return 200;
+  if (n <= 20) return 400;
+  return 400 + Math.max(0, n - 20) * 10;
+}
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
   const [adminToken, setAdminToken] = useState(() => localStorage.getItem(ADMIN_TOKEN_KEY) || '');
@@ -383,16 +391,17 @@ function App() {
     return true;
   }
 
-  async function renewWebsite(site, transactionId) {
-    const amount = Number(site.brandCharge || site.monthlyFee || portalData.adminPayment.brandOpeningFee || 60);
+  async function renewWebsite(site, transactionId, siteCount = 1) {
+    const sc = Number(siteCount || 1) || 1;
+    const amount = siteCount ? computePlanAmount(sc) : Number(site.brandCharge || site.monthlyFee || portalData.adminPayment.brandOpeningFee || 60);
     const result = await api('/client/me?resource=billing', {
       method: 'POST',
       auth: true,
-      body: { websiteId: site.id, transaction_id: transactionId, amount, months: 1 }
+      body: { websiteId: site.id, transaction_id: transactionId, amount, months: 1, siteCount: sc }
     });
     if (!result.ok) return errorMessage(result.data, 'Renew failed');
     await loadClient();
-    return result.data.message || 'Payment TrxID saved. Access will update when admin SMS matches.';
+    return result.data.message || `Payment TrxID saved for Tk ${amount}. Access will update when admin SMS matches.`;
   }
 
   async function verifyPayment(payload) {
