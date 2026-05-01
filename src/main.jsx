@@ -54,7 +54,7 @@ const sidebarItems = [
   'Android App', 'Home Page', 'SMS List', 'Developer Docs', 'Our Support'
 ];
 
-const adminMenuItems = ['Overview', 'Brand Requests', 'Billing Requests', 'Payments', 'History', 'Clients', 'Devices', 'Support', 'Settings'];
+const adminMenuItems = ['Overview', 'Brand Requests', 'Billing Requests', 'Merchant Verify', 'Payments', 'History', 'Clients', 'Devices', 'Support', 'Settings'];
 
 const defaultSettings = {
   currency: 'BDT',
@@ -75,6 +75,8 @@ const emptyPortalData = {
     completedTodayAmount: 0,
     pendingAmount: 0,
     pendingTransactions: 0,
+    pendingMerchantAmount: 0,
+    pendingMerchantVerifications: 0,
     storedData: 0,
     completedTransactions: 0,
     unpaidInvoices: 0,
@@ -100,6 +102,7 @@ const emptyPortalData = {
   websites: [],
   payments: [],
   transactions: [],
+  merchantHistory: [],
   renewals: [],
   billingRequests: [],
   invoices: [],
@@ -117,6 +120,7 @@ const emptyAdminData = {
     pendingBrands: 0,
     activeBrands: 0,
     pendingBilling: 0,
+    pendingMerchantVerifications: 0,
     totalSms: 0,
     totalSmsAmount: 0,
     adminIncomeAmount: 0,
@@ -135,6 +139,7 @@ const emptyAdminData = {
   billingRequests: [],
   payments: [],
   accountHistory: [],
+  merchantVerifications: [],
   devices: [],
   tickets: []
 };
@@ -333,6 +338,18 @@ function App() {
     return true;
   }
 
+  async function updateAdminMerchantVerification(payload) {
+    setAdminMessage('Updating merchant verification...');
+    const result = await api('/admin', { method: 'PATCH', adminAuth: true, body: { action: 'merchantVerification', ...payload } });
+    if (!result.ok) {
+      setAdminMessage(errorMessage(result.data, 'Merchant verification update failed'));
+      return false;
+    }
+    setAdminMessage(result.data.message || 'Merchant verification updated.');
+    await loadAdmin();
+    return true;
+  }
+
   async function addWebsite(formData) {
     setWebsiteMessage('Adding website...');
     const result = await api('/client/websites', { method: 'POST', auth: true, body: formData });
@@ -383,7 +400,7 @@ function App() {
       setCheckoutMessage(errorMessage(result.data, 'Payment verification failed'));
       return;
     }
-    setCheckoutMessage(result.data.status === 'already_verified' ? 'Payment already verified.' : 'Payment verified.');
+    setCheckoutMessage(paymentVerificationMessage(result.data));
     await loadClient();
   }
 
@@ -460,6 +477,7 @@ function App() {
         onUpdateBrand={updateAdminBrand}
         onUpdateUser={updateAdminUser}
         onUpdatePayment={updateAdminPayment}
+        onUpdateMerchantVerification={updateAdminMerchantVerification}
       />
     );
   }
@@ -774,9 +792,10 @@ function AdminContent(props) {
   return (
     <div className="dashboard-content admin-content">
       <Message text={banner} />
-      {props.activeAdminMenu === 'Overview' ? <AdminOverview data={data} onUpdateBrand={props.onUpdateBrand} onUpdatePayment={props.onUpdatePayment} /> : null}
+      {props.activeAdminMenu === 'Overview' ? <AdminOverview data={data} onUpdateBrand={props.onUpdateBrand} onUpdatePayment={props.onUpdatePayment} onUpdateMerchantVerification={props.onUpdateMerchantVerification} /> : null}
       {props.activeAdminMenu === 'Brand Requests' ? <AdminBrandsPanel data={data} onUpdateBrand={props.onUpdateBrand} /> : null}
       {props.activeAdminMenu === 'Billing Requests' ? <AdminBillingPanel data={data} onUpdateBrand={props.onUpdateBrand} /> : null}
+      {props.activeAdminMenu === 'Merchant Verify' ? <AdminMerchantVerificationPanel data={data} onUpdateMerchantVerification={props.onUpdateMerchantVerification} /> : null}
       {props.activeAdminMenu === 'Payments' ? <AdminPaymentsPanel data={data} onUpdatePayment={props.onUpdatePayment} /> : null}
       {props.activeAdminMenu === 'History' ? <AdminHistoryPanel data={data} /> : null}
       {props.activeAdminMenu === 'Clients' ? <AdminClientsPanel data={data} onUpdateUser={props.onUpdateUser} /> : null}
@@ -787,25 +806,31 @@ function AdminContent(props) {
   );
 }
 
-function AdminOverview({ data, onUpdateBrand, onUpdatePayment }) {
+function AdminOverview({ data, onUpdateBrand, onUpdatePayment, onUpdateMerchantVerification }) {
   const pendingBrands = data.brands.filter(isPendingBrand).slice(0, 6);
   const pendingBilling = data.billingRequests.filter(isPendingBilling).slice(0, 6);
+  const pendingMerchant = data.merchantVerifications.filter(isPendingMerchantVerification).slice(0, 6);
   return (
     <>
       <section className="wallet-grid">
         <WalletCard label="Total Clients" value={data.summary.totalClients} sub={`${data.clients.length} recent accounts`} tone="green" />
         <WalletCard label="Total Brands" value={data.summary.totalBrands} sub={`${data.summary.activeBrands} active brands`} tone="blue" />
-        <WalletCard label="Pending Reviews" value={data.summary.pendingBrands + data.summary.pendingBilling} sub={`${data.summary.pendingBilling} billing requests`} tone="amber" />
+        <WalletCard label="Pending Reviews" value={data.summary.pendingBrands + data.summary.pendingBilling + data.summary.pendingMerchantVerifications} sub={`${data.summary.pendingMerchantVerifications} merchant verifications`} tone="amber" />
         <WalletCard label="SMS Volume" value={formatMoney(data.summary.totalSmsAmount)} sub={`${data.summary.totalSms} stored SMS records`} tone="ink" />
       </section>
       <section className="mini-stat-grid">
         <MiniStat label="Active Brands" value={data.summary.activeBrands} sub="Approved and unlocked" />
         <MiniStat label="Pending Billing" value={data.summary.pendingBilling} sub="Waiting for admin action" />
+        <MiniStat label="Pending Merchant" value={data.summary.pendingMerchantVerifications} sub="Waiting for SMS or manual approval" />
         <MiniStat label="Admin Account" value={formatMoney(data.summary.adminIncomeAmount)} sub={`${data.summary.adminIncomeCount} admin SMS records`} />
       </section>
       <section className="portal-grid-two align-start">
         <AdminBrandQueue items={pendingBrands} onUpdateBrand={onUpdateBrand} />
         <AdminBillingQueue items={pendingBilling} onUpdateBrand={onUpdateBrand} />
+      </section>
+      <section className="panel">
+        <div className="section-title"><div><p className="eyebrow">Merchant Queue</p><h2>Pending payment verifications</h2></div><span className="pill">{pendingMerchant.length} pending</span></div>
+        <AdminMerchantVerificationTable items={pendingMerchant} onUpdateMerchantVerification={onUpdateMerchantVerification} />
       </section>
       <section className="panel">
         <div className="section-title"><div><p className="eyebrow">Recent Payments</p><h2>Latest SMS records</h2></div><span className="pill">{data.payments.length} records</span></div>
@@ -876,6 +901,32 @@ function AdminBillingPanel({ data, onUpdateBrand }) {
         </select>
       </div>
       <AdminBillingTable items={items} onUpdateBrand={onUpdateBrand} />
+    </section>
+  );
+}
+
+function AdminMerchantVerificationPanel({ data, onUpdateMerchantVerification }) {
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState('');
+  const items = data.merchantVerifications.filter((item) => {
+    const statusOk = status ? item.status === status : true;
+    return statusOk && searchMatches(item, ['transaction_id', 'domain', 'clientEmail', 'clientName', 'order_id', 'status', 'adminNote'], query);
+  });
+  return (
+    <section className="panel">
+      <div className="section-title"><div><p className="eyebrow">Merchant Verify</p><h2>Payment verification history</h2></div><span className="pill">{items.length} records</span></div>
+      <div className="admin-filters">
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search TrxID, domain, client, order..." />
+        <select value={status} onChange={(event) => setStatus(event.target.value)}>
+          <option value="">All statuses</option>
+          <option value="pending_sms">Pending SMS</option>
+          <option value="verified">Verified</option>
+          <option value="manual_approved">Manual approved</option>
+          <option value="manual_accepted">Manual accepted</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+      <AdminMerchantVerificationTable items={items} onUpdateMerchantVerification={onUpdateMerchantVerification} />
     </section>
   );
 }
@@ -1020,6 +1071,33 @@ function AdminBillingTable({ items = [], onUpdateBrand, compact = false }) {
   );
 }
 
+function AdminMerchantVerificationTable({ items = [], onUpdateMerchantVerification }) {
+  if (!items.length) return <div className="empty-state">No merchant verification records match this view.</div>;
+  return (
+    <div className="table-wrap">
+      <table className="admin-table">
+        <thead><tr><th>Created</th><th>Brand</th><th>Client</th><th>TrxID</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>{items.map((item) => (
+          <tr key={item.id || item.transaction_id}>
+            <td>{formatDate(item.createdAt || item.verifiedAt)}</td>
+            <td><strong>{item.domain || '-'}</strong><small>{item.order_id || 'No order ID'}</small></td>
+            <td>{item.clientEmail || '-'}<small>{item.clientName || ''}</small></td>
+            <td><strong>{item.transaction_id}</strong><small>{item.sellerName || item.buyerName || '-'}</small></td>
+            <td>{formatMoney(item.amount)}</td>
+            <td><span className={`badge ${statusBadgeClass(item.status)}`}>{formatBrandStatus(item.status)}</span><small>{item.adminNote || item.source || ''}</small></td>
+            <td>
+              <div className="table-actions">
+                <button type="button" className="small" onClick={() => onUpdateMerchantVerification({ id: item.id, status: 'manual_approved', adminNote: 'Manually approved from admin dashboard' })}>Approve</button>
+                <button type="button" className="danger-button small" onClick={() => onUpdateMerchantVerification({ id: item.id, status: 'rejected', adminNote: 'Rejected from admin dashboard' })}>Reject</button>
+              </div>
+            </td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
+  );
+}
+
 function AdminPaymentsTable({ items = [], onUpdatePayment }) {
   if (!items.length) return <div className="empty-state">No SMS payment records match this view.</div>;
   return (
@@ -1139,7 +1217,7 @@ function OverviewContent({ client, websites, stats, portalData, websiteMessage, 
       </section>
       <section className="portal-grid-two"><WebsiteForm onSubmit={onAddWebsite} message={websiteMessage} adminPayment={portalData.adminPayment} /><CheckoutForm websites={websites} onSubmit={onVerifyPayment} message={checkoutMessage} /></section>
       <section className="portal-grid-two align-start"><WebsiteList websites={websites} onRenew={onRenewWebsite} /><AndroidCard client={client} response={response} devices={portalData.devices} websites={websites} /></section>
-      <section className="panel transaction-panel"><div className="section-title"><div><p className="eyebrow">Transaction Report</p><h2>Last completed transactions</h2></div><span className="pill">{portalData.transactions.length} verified</span></div><TransactionTable items={portalData.transactions} /></section>
+      <section className="panel transaction-panel"><div className="section-title"><div><p className="eyebrow">Transaction Report</p><h2>Merchant payment history</h2></div><span className="pill">{portalData.transactions.length} records</span></div><TransactionTable items={portalData.transactions} /></section>
     </>
   );
 }
@@ -1150,7 +1228,7 @@ function SummaryCards({ portalData, websites, stats }) {
     <section className="wallet-grid">
       <WalletCard label="Wallet Balance" value={formatMoney(summary.walletBalance)} tone="green" />
       <WalletCard label="Completed Transactions Amount" value={formatMoney(summary.completedAmount)} sub={`Completed today ${formatMoney(summary.completedTodayAmount)}`} tone="blue" />
-      <WalletCard label="Pending Transactions Amount" value={formatMoney(summary.pendingAmount)} sub={`${summary.pendingTransactions} awaiting processing`} tone="amber" />
+      <WalletCard label="Pending Merchant Amount" value={formatMoney(summary.pendingMerchantAmount || summary.pendingAmount)} sub={`${summary.pendingMerchantVerifications || summary.pendingTransactions} awaiting approval`} tone="amber" />
       <WalletCard label="Stored Data" value={summary.storedData} sub={`${stats.active} active of ${websites.length} websites`} tone="ink" />
     </section>
   );
@@ -1218,7 +1296,7 @@ function PaymentLinkPanel({ websites, checkoutMessage, onVerifyPayment, portalDa
   return (
     <section className="portal-grid-two align-start">
       <CheckoutForm websites={websites} onSubmit={onVerifyPayment} message={checkoutMessage} />
-      <InfoPanel title="Live checkout rules" eyebrow="Payment Link" text="Use a website API key to verify customer payments after the Android app receives the SMS." items={[`${websites.length} websites available`, `${portalData.summary.completedTransactions} successful verifications`, `${portalData.summary.pendingTransactions} payments waiting`]} />
+      <InfoPanel title="Live checkout rules" eyebrow="Payment Link" text="Use a website API key to verify customer payments after the Android app receives the SMS." items={[`${websites.length} websites available`, `${portalData.summary.completedTransactions} successful verifications`, `${portalData.summary.pendingMerchantVerifications} merchant verifications waiting`]} />
     </section>
   );
 }
@@ -1226,7 +1304,7 @@ function PaymentLinkPanel({ websites, checkoutMessage, onVerifyPayment, portalDa
 function TransactionsPanel({ portalData }) {
   return (
     <section className="panel">
-      <div className="section-title"><div><p className="eyebrow">Transactions</p><h2>Verified merchant payments</h2></div><span className="pill">{formatMoney(portalData.summary.completedAmount)}</span></div>
+      <div className="section-title"><div><p className="eyebrow">Transactions</p><h2>Merchant payment history</h2></div><span className="pill">{portalData.summary.pendingMerchantVerifications} pending</span></div>
       <TransactionTable items={portalData.transactions} />
     </section>
   );
@@ -1447,8 +1525,8 @@ function AndroidCard({ client, response, devices = [], websites = [] }) {
 }
 
 function TransactionTable({ items = [] }) {
-  if (!items.length) return <div className="empty-state">No verified transactions yet. Forward an SMS from Android, then verify it from Payment Link.</div>;
-  return <div className="table-wrap"><table><thead><tr><th>#</th><th>Domain</th><th>TrxID</th><th>Order</th><th>Amount</th><th>Status</th></tr></thead><tbody>{items.map((item, index) => <tr key={item.id || item.transaction_id}><td>{index + 1}</td><td>{item.domain || '-'}</td><td><strong>{item.transaction_id}</strong></td><td>{item.order_id || '-'}</td><td>{formatMoney(item.amount)}</td><td><span className="status-chip success">{item.status || 'verified'}</span></td></tr>)}</tbody></table></div>;
+  if (!items.length) return <div className="empty-state">No merchant payment history yet. Verify a payment from Payment Link; it will stay pending until SMS matches or admin approves.</div>;
+  return <div className="table-wrap"><table><thead><tr><th>#</th><th>Domain</th><th>TrxID</th><th>Order</th><th>Amount</th><th>Status</th></tr></thead><tbody>{items.map((item, index) => <tr key={item.id || item.transaction_id}><td>{index + 1}</td><td>{item.domain || '-'}</td><td><strong>{item.transaction_id}</strong><small>{item.buyerName || item.sellerName || ''}</small></td><td>{item.order_id || '-'}</td><td>{formatMoney(item.amount)}</td><td><span className={`status-chip ${transactionStatusClass(item.status)}`}>{formatBrandStatus(item.status || 'verified')}</span><small>{item.adminNote || ''}</small></td></tr>)}</tbody></table></div>;
 }
 
 function PaymentDataTable({ items = [] }) {
@@ -1544,6 +1622,12 @@ function Message({ text }) {
 }
 
 function errorMessage(data, fallback) { return textMessage(data?.error || data?.message || fallback); }
+function paymentVerificationMessage(data) {
+  if (data?.status === 'pending_sms') return data.message || 'Payment saved. Waiting for matching Android SMS.';
+  if (data?.status === 'already_verified') return 'Payment already verified.';
+  if (data?.status === 'manual_accepted') return 'Payment manually accepted.';
+  return 'Payment verified.';
+}
 function resolveApiBaseUrl(value) {
   let configured = String(value || '').trim();
   const assignmentMatch = configured.match(/^VITE_PAYMENT_GATEWAY_API_URL\s*=\s*(.+)$/);
@@ -1565,6 +1649,7 @@ function normalizePortalData(data) {
     appDownload: { ...emptyPortalData.appDownload, ...(data?.appDownload || {}) },
     payments: data?.payments || [],
     transactions: data?.transactions || [],
+    merchantHistory: data?.merchantHistory || data?.transactions || [],
     renewals: data?.renewals || [],
     billingRequests: data?.billingRequests || [],
     invoices: data?.invoices || [],
@@ -1585,6 +1670,7 @@ function normalizeAdminData(data) {
     billingRequests: data?.billingRequests || [],
     payments: data?.payments || [],
     accountHistory: data?.accountHistory || [],
+    merchantVerifications: data?.merchantVerifications || [],
     devices: data?.devices || [],
     tickets: data?.tickets || []
   };
@@ -1595,6 +1681,9 @@ function isPendingBrand(brand) {
 function isPendingBilling(request) {
   return ['pending', 'pending_review'].includes(request?.status);
 }
+function isPendingMerchantVerification(request) {
+  return request?.status === 'pending_sms';
+}
 function searchMatches(item, fields, query) {
   const needle = String(query || '').trim().toLowerCase();
   if (!needle) return true;
@@ -1602,9 +1691,15 @@ function searchMatches(item, fields, query) {
 }
 function statusBadgeClass(status) {
   const value = String(status || '').toLowerCase();
-  if (['active', 'approved', 'verified', 'paid', 'online', 'open'].includes(value)) return 'active';
+  if (['active', 'approved', 'verified', 'manual_approved', 'manual_accepted', 'paid', 'online', 'open'].includes(value)) return 'active';
   if (['rejected', 'blocked', 'suspended', 'failed', 'refunded', 'closed', 'offline'].includes(value)) return 'danger';
   return '';
+}
+function transactionStatusClass(status) {
+  const value = String(status || '').toLowerCase();
+  if (['verified', 'manual_approved', 'manual_accepted', 'already_verified'].includes(value)) return 'success';
+  if (['rejected', 'failed'].includes(value)) return 'danger';
+  return 'pending';
 }
 function textMessage(value) {
   if (value === null || value === undefined) return '';
