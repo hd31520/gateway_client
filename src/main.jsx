@@ -210,7 +210,7 @@ function App() {
     const result = await api('/admin', { token: tokenOverride });
     setLoadingAdmin(false);
     if (!result.ok) {
-      if (result.status === 401 || result.status === 403) logoutAdmin(false);
+      if (result.status === 401 || result.status === 403) await logoutAdmin(false, false);
       else setAdminMessage(errorMessage(result.data, 'Admin dashboard load failed'));
       return;
     }
@@ -240,7 +240,7 @@ function App() {
     const result = await api('/client/me?view=dashboard', { auth: true });
     setLoadingPortal(false);
     if (!result.ok) {
-      if (result.status === 401 || result.status === 403) logout(false);
+      if (result.status === 401 || result.status === 403) await logout(false, false);
       return;
     }
     setClient(result.data.client || null);
@@ -248,7 +248,11 @@ function App() {
     setPortalData(normalizePortalData(result.data));
   }
 
-  function logout(goHome = true) {
+  async function logout(goHome = true, revokeToken = true) {
+    const currentToken = token;
+    if (revokeToken && currentToken) {
+      await api('/client/logout', { method: 'POST', token: currentToken });
+    }
     localStorage.removeItem(TOKEN_KEY);
     setToken('');
     setClient(null);
@@ -258,7 +262,11 @@ function App() {
     if (goHome) setView('home');
   }
 
-  function logoutAdmin(goHome = true) {
+  async function logoutAdmin(goHome = true, revokeToken = true) {
+    const currentToken = adminToken;
+    if (revokeToken && currentToken) {
+      await api('/logout', { method: 'POST', token: currentToken });
+    }
     localStorage.removeItem(ADMIN_TOKEN_KEY);
     setAdminToken('');
     setAdmin(null);
@@ -435,22 +443,33 @@ function App() {
     );
   }
 
-  return <Landing onOpenPortal={() => setView('portal')} onOpenAdmin={() => setView('admin')} />;
+  return (
+    <Landing
+      hasClientSession={Boolean(token)}
+      hasAdminSession={Boolean(adminToken)}
+      onOpenPortal={() => setView('portal')}
+      onOpenAdmin={() => setView('admin')}
+      onLogout={() => logout(false)}
+      onLogoutAdmin={() => logoutAdmin(false)}
+    />
+  );
 }
 
-function Landing({ onOpenPortal, onOpenAdmin }) {
+function Landing({ hasClientSession, hasAdminSession, onOpenPortal, onOpenAdmin, onLogout, onLogoutAdmin }) {
   return (
     <main className="site-shell">
       <header className="top-nav">
         <a className="brand" href="#home"><span>G</span>GatewayFlow</a>
         <nav>
-          {['Home', 'Features', 'Guide', 'Pricing', 'Blog', 'Documentation', 'Developer Page'].map((item) => (
+          {['Home', 'Features', 'Guide', 'Pricing', 'Blog'].map((item) => (
             <a key={item} href={`#${item.toLowerCase().replaceAll(' ', '-')}`}>{item}</a>
           ))}
         </nav>
         <div className="top-actions">
           <button type="button" className="ghost-button" onClick={onOpenAdmin}>Admin</button>
           <button type="button" onClick={onOpenPortal}>Dashboard</button>
+          {hasClientSession ? <button type="button" className="danger-button" onClick={onLogout}>Logout</button> : null}
+          {hasAdminSession ? <button type="button" className="danger-button" onClick={onLogoutAdmin}>Admin Logout</button> : null}
         </div>
       </header>
 
@@ -463,7 +482,7 @@ function Landing({ onOpenPortal, onOpenAdmin }) {
           <div className="button-row">
             <button type="button" onClick={onOpenPortal}>Open Portal</button>
             <button type="button" className="ghost-button" onClick={onOpenAdmin}>Admin Panel</button>
-            <a className="ghost-link" href="#developer-page">Demo Payment Link</a>
+            {hasClientSession ? <button type="button" className="danger-button" onClick={onLogout}>Logout</button> : null}
           </div>
         </div>
         <div className="hero-visual">
@@ -530,9 +549,9 @@ function Landing({ onOpenPortal, onOpenAdmin }) {
       <section id="developer-page" className="split-section cta-section">
         <div>
           <LineBurst />
-          <p className="eyebrow">Developer Page</p>
+          <p className="eyebrow">Automation</p>
           <h2>Experience the power of payment automation.</h2>
-          <p>Use API keys for merchant verification, Android app login for SMS forwarding, and dashboard tools for websites, invoices, plans, and payment settings.</p>
+          <p>Use secure dashboard credentials, Android app login for SMS forwarding, and workspace tools for websites, invoices, plans, and payment settings.</p>
           <button type="button" onClick={onOpenPortal}>Get Started</button>
         </div>
         <div className="layout-preview">
@@ -544,7 +563,7 @@ function Landing({ onOpenPortal, onOpenAdmin }) {
       <section className="section-block supported-block">
         <SectionIntro eyebrow="Integrations" title="Our supported payment gateways" text="Connect trusted payment methods and popular platforms for seamless business transactions." />
         <TagCloud title="Gateways" tags={['bKash', 'Nagad', 'Rocket', 'Upay', 'Tap', 'Bank Transfer', 'Agent Wallet', 'Merchant Wallet']} />
-        <TagCloud title="Platforms" tags={['PHP', 'Laravel', 'WordPress', 'WHMCS', 'Magento', 'Shopify', 'React', 'Angular', 'SMM Panels', 'Custom API']} />
+        <TagCloud title="Platforms" tags={['PHP', 'Laravel', 'WordPress', 'WHMCS', 'Magento', 'Shopify', 'React', 'Angular', 'SMM Panels', 'Custom Apps']} />
       </section>
 
       <section id="blog" className="section-block updates-block">
@@ -552,14 +571,14 @@ function Landing({ onOpenPortal, onOpenAdmin }) {
         <SectionIntro eyebrow="Latest Updates" title="Build faster with payment automation" text="Automate payments with a seamless, secure, and modern interface for business operators and developers." />
         <div className="updates-grid">
           <UpdateCard title="Unlock automated payments" label="9K+ Automation" text="Reduce manual payment checks with Android SMS forwarding and API verification." />
-          <UpdateCard title="User-friendly design" label="Interface" text="Manage wallets, sites, API keys, and transaction reports from one workspace." />
+          <UpdateCard title="User-friendly design" label="Interface" text="Manage wallets, sites, credentials, and transaction reports from one workspace." />
           <UpdateCard title="Instant transaction updates" label="Real-Time Sync" text="Keep dashboards and merchant checkouts aligned with the latest payment state." />
         </div>
       </section>
 
       <footer className="site-footer">
         <div><a className="brand" href="#home"><span>G</span>GatewayFlow</a><p>support@gatewayflow.local</p></div>
-        <div><h4>Useful Links</h4><a href="#home">Home</a><a href="#pricing">Pricing</a><a href="#blog">Blog</a><a href="#developer-page">API Docs</a></div>
+        <div><h4>Useful Links</h4><a href="#home">Home</a><a href="#pricing">Pricing</a><a href="#blog">Blog</a></div>
         <div><h4>Help and Support</h4><a href="#guide">How it works</a><a href="#features">FAQs</a><a href="#documentation">Terms and conditions</a><a href="#documentation">Privacy Policy</a></div>
         <p className="copyright">© Copyrights 2026. All rights reserved.</p>
       </footer>
@@ -859,7 +878,7 @@ function AdminSettingsPanel({ data }) {
   return (
     <section className="portal-grid-two align-start">
       <InfoPanel title="Admin Wallets" eyebrow="Settings" text="These values come from the server environment and are used by client brand opening instructions." items={[`Admin email: ${config.email || 'Not configured'}`, `bKash: ${config.bkashNumber || 'Not configured'}`, `Nagad: ${config.nagadNumber || 'Not configured'}`, `Brand opening fee: ${formatMoney(config.brandOpeningFee)}`]} />
-      <InfoPanel title="System Links" eyebrow="Runtime" text="Live API and Android app URLs used by the portal." items={[`API base: ${API_BASE_URL}`, `Android app: ${config.androidAppDownloadUrl || '/gatewayflow-android.apk'}`, `Recent clients loaded: ${data.clients.length}`, `Recent brands loaded: ${data.brands.length}`]} />
+      <InfoPanel title="System Assets" eyebrow="Runtime" text="Android app and recent portal records used by the workspace." items={[`Android app: ${config.androidAppDownloadUrl || '/gatewayflow-android.apk'}`, `Recent clients loaded: ${data.clients.length}`, `Recent brands loaded: ${data.brands.length}`]} />
     </section>
   );
 }
@@ -1387,7 +1406,7 @@ function RenewalList({ renewals = [] }) {
 }
 
 function DocsList({ docs = [] }) {
-  return <section className="panel"><div className="section-title"><div><p className="eyebrow">Developer Docs</p><h2>API routes</h2></div><span className="pill">{docs.length} routes</span></div><div className="card-list">{docs.map((doc) => <article className="route-card" key={doc.path}><h3>{doc.title}</h3><p><strong>{doc.method}</strong> {doc.path}</p><small>{doc.auth}</small><code>{doc.body.join(', ') || 'No body'}</code></article>)}</div></section>;
+  return <section className="panel"><div className="section-title"><div><p className="eyebrow">Developer Docs</p><h2>Integration checklist</h2></div><span className="pill">{docs.length} items</span></div><div className="card-list">{docs.map((doc) => <article className="route-card" key={doc.title}><h3>{doc.title}</h3><p><strong>{doc.method}</strong> secure server route</p><small>{doc.auth}</small><code>{doc.body.join(', ') || 'No body'}</code></article>)}</div></section>;
 }
 
 function ApiKeyList({ websites = [] }) {
