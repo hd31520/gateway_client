@@ -144,6 +144,11 @@ const emptyAdminData = {
   tickets: []
 };
 
+function isAdminAccount(account) {
+  const role = String(account?.role || account?.userRole || '').trim().toLowerCase();
+  return role === 'admin';
+}
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
   const [adminToken, setAdminToken] = useState(() => localStorage.getItem(ADMIN_TOKEN_KEY) || '');
@@ -214,24 +219,7 @@ function App() {
     }
   }
 
-  async function authenticateAdmin(formData) {
-    setBusy(true);
-    setAdminMessage('Logging in...');
-    const result = await api('/admin', { method: 'POST', body: { ...formData, action: 'login' } });
-    setBusy(false);
-    if (!result.ok || !result.data.token) {
-      setAdminMessage(errorMessage(result.data, 'Admin login failed'));
-      return;
-    }
-    localStorage.setItem(ADMIN_TOKEN_KEY, result.data.token);
-    setAdminToken(result.data.token);
-    setAdmin(result.data.admin || null);
-    setAdminData(normalizeAdminData({ config: result.data.config }));
-    setAdminMessage('Admin session ready.');
-    setView('admin');
-  }
-
-  async function loadAdmin(tokenOverride = adminToken) {
+  async function loadAdmin(tokenOverride = adminToken || token) {
     setLoadingAdmin(true);
     const result = await api('/admin', { token: tokenOverride });
     setLoadingAdmin(false);
@@ -257,8 +245,29 @@ function App() {
     localStorage.setItem(TOKEN_KEY, result.data.token);
     setToken(result.data.token);
     setClient(result.data.client || null);
+    const account = result.data.client || null;
+    const adminSession = isAdminAccount(account);
+    if (adminSession) {
+      localStorage.setItem(ADMIN_TOKEN_KEY, result.data.token);
+      setAdminToken(result.data.token);
+      setAdmin(account);
+      setAdminData(normalizeAdminData({
+        admin: account,
+        config: {
+          ...emptyAdminData.config,
+          email: account?.email || '',
+          brandOpeningFee: account?.brandOpeningFee || emptyAdminData.config.brandOpeningFee
+        }
+      }));
+      setView('admin');
+    } else {
+      localStorage.removeItem(ADMIN_TOKEN_KEY);
+      setAdminToken('');
+      setAdmin(null);
+      setAdminData(emptyAdminData);
+      setView('portal');
+    }
     setAuthMessage('Welcome in.');
-    setView('portal');
   }
 
   async function loadClient() {
@@ -280,24 +289,33 @@ function App() {
       await api('/client/logout', { method: 'POST', token: currentToken });
     }
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
     setToken('');
     setClient(null);
     setWebsites([]);
     setPortalData(emptyPortalData);
+    setAdminToken('');
+    setAdmin(null);
+    setAdminData(emptyAdminData);
     setResponse({ success: true, message: 'Logged out' });
     if (goHome) setView('home');
   }
 
   async function logoutAdmin(goHome = true, revokeToken = true) {
-    const currentToken = adminToken;
+    const currentToken = adminToken || token;
     if (revokeToken && currentToken) {
       await api('/logout', { method: 'POST', token: currentToken });
     }
     localStorage.removeItem(ADMIN_TOKEN_KEY);
+    localStorage.removeItem(TOKEN_KEY);
     setAdminToken('');
     setAdmin(null);
     setAdminData(emptyAdminData);
     setAdminMessage('');
+    setToken('');
+    setClient(null);
+    setWebsites([]);
+    setPortalData(emptyPortalData);
     setResponse({ success: true, message: 'Admin logged out' });
     if (goHome) setView('home');
   }
@@ -473,7 +491,7 @@ function App() {
         onOpenPortal={() => setView('portal')}
         onLogout={logoutAdmin}
         onRefresh={() => loadAdmin()}
-        onAuth={authenticateAdmin}
+        onAuth={(formData) => authenticate('login', formData)}
         onUpdateBrand={updateAdminBrand}
         onUpdateUser={updateAdminUser}
         onUpdatePayment={updateAdminPayment}
@@ -482,10 +500,12 @@ function App() {
     );
   }
 
+  const isAdminSession = Boolean(adminToken || (client && isAdminAccount(client)));
+
   return (
     <Landing
       hasClientSession={Boolean(token)}
-      hasAdminSession={Boolean(adminToken)}
+      hasAdminSession={isAdminSession}
       onOpenPortal={() => setView('portal')}
       onOpenAdmin={() => setView('admin')}
       onLogout={() => logout(false)}
@@ -762,26 +782,15 @@ function AdminAuth({ onAuth, adminMessage, busy, onHome }) {
     <section className="portal-auth-grid">
       <div className="auth-intro-card">
         <p className="eyebrow">Control Room</p>
-        <h2>Approve brands, renewals, users, and SMS records.</h2>
-        <p>Use the server admin email and password from your environment settings to access operational controls.</p>
+        <h2>Same login for client and admin.</h2>
+        <p>Sign in with the normal account form. If the account role is admin, this dashboard opens automatically and client access stays available.</p>
         <button type="button" className="ghost-button" onClick={onHome}>Back to Home</button>
       </div>
-      <AdminAuthForm onSubmit={onAuth} message={adminMessage} busy={busy} />
+      <section className="auth-grid">
+        <AuthForm title="Login" eyebrow="Same account" mode="login" busy={busy} onSubmit={(_, form) => onAuth(form)} />
+        {adminMessage ? <p className="wide-message panel">{textMessage(adminMessage)}</p> : null}
+      </section>
     </section>
-  );
-}
-
-function AdminAuthForm({ onSubmit, message, busy }) {
-  const [form, setForm] = useState({ email: '', password: '' });
-  function update(field, value) { setForm((current) => ({ ...current, [field]: value })); }
-  return (
-    <form className="panel form-card accent-card" onSubmit={(event) => { event.preventDefault(); onSubmit(form); }}>
-      <p className="eyebrow">Administrator</p><h2>Login</h2>
-      <label htmlFor="adminEmail">Email or username</label><input id="adminEmail" value={form.email} onChange={(event) => update('email', event.target.value)} autoComplete="username" required />
-      <label htmlFor="adminPassword">Password</label><input id="adminPassword" type="password" value={form.password} onChange={(event) => update('password', event.target.value)} autoComplete="current-password" required />
-      <button type="submit" disabled={busy}>{busy ? 'Please wait...' : 'Login Admin'}</button>
-      <Message text={message} />
-    </form>
   );
 }
 
