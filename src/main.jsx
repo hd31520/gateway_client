@@ -826,7 +826,7 @@ function AdminOverview({ data, onUpdateBrand, onUpdatePayment, onUpdateMerchantV
       <section className="wallet-grid">
         <WalletCard label="Total Clients" value={data.summary.totalClients} sub={`${data.clients.length} recent accounts`} tone="green" />
         <WalletCard label="Total Brands" value={data.summary.totalBrands} sub={`${data.summary.activeBrands} active brands`} tone="blue" />
-        <WalletCard label="Pending Reviews" value={data.summary.pendingBrands + data.summary.pendingBilling + data.summary.pendingMerchantVerifications} sub={`${data.summary.pendingMerchantVerifications} merchant verifications`} tone="amber" />
+        <WalletCard label="Awaiting SMS Match" value={data.summary.pendingBrands + data.summary.pendingBilling + data.summary.pendingMerchantVerifications} sub={`${data.summary.pendingMerchantVerifications} merchant verifications`} tone="amber" />
         <WalletCard label="SMS Volume" value={formatMoney(data.summary.totalSmsAmount)} sub={`${data.summary.totalSms} stored SMS records`} tone="ink" />
       </section>
       <section className="mini-stat-grid">
@@ -840,7 +840,7 @@ function AdminOverview({ data, onUpdateBrand, onUpdatePayment, onUpdateMerchantV
         <AdminBillingQueue items={pendingBilling} onUpdateBrand={onUpdateBrand} />
       </section>
       <section className="panel">
-        <div className="section-title"><div><p className="eyebrow">Merchant Queue</p><h2>Pending payment verifications</h2></div><span className="pill">{pendingMerchant.length} pending</span></div>
+        <div className="section-title"><div><p className="eyebrow">Merchant Queue</p><h2>Waiting for SMS match</h2></div><span className="pill">{pendingMerchant.length} pending</span></div>
         <AdminMerchantVerificationTable items={pendingMerchant} onUpdateMerchantVerification={onUpdateMerchantVerification} />
       </section>
       <section className="panel">
@@ -1098,7 +1098,7 @@ function AdminMerchantVerificationTable({ items = [], onUpdateMerchantVerificati
             <td><span className={`badge ${statusBadgeClass(item.status)}`}>{formatBrandStatus(item.status)}</span><small>{item.adminNote || item.source || ''}</small></td>
             <td>
               <div className="table-actions">
-                <button type="button" className="small" onClick={() => onUpdateMerchantVerification({ id: item.id, status: 'manual_approved', adminNote: 'Manually approved from admin dashboard' })}>Approve</button>
+                <button type="button" className="small" onClick={() => onUpdateMerchantVerification({ id: item.id, status: 'manual_approved', adminNote: 'Approved from admin dashboard' })}>Approve</button>
                 <button type="button" className="danger-button small" onClick={() => onUpdateMerchantVerification({ id: item.id, status: 'rejected', adminNote: 'Rejected from admin dashboard' })}>Reject</button>
               </div>
             </td>
