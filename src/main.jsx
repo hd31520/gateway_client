@@ -35,7 +35,7 @@ const pricingPlans = [
 const documentationSteps = [
   ['01', 'Account Login', 'Client portal থেকে account login বা registration করুন। Login থাকলে main page এবং dashboard দুই জায়গাতেই logout দেখা যাবে.'],
   ['02', 'Brand Payment', 'Opening charge admin bKash/Nagad এ পাঠিয়ে brand form-এ TrxID দিন.'],
-  ['03', 'Auto Approval', 'Admin mobile SMS history-তে TrxID এবং amount মিললে brand instant active হবে.'],
+  ['03', 'Auto Approval', 'TrxID এবং admin SMS TrxID মিললে কোনো manual approval লাগবে না; brand auto active হবে.'],
   ['04', 'Android App', 'Brand active হলে Android app download করুন, client account দিয়ে login করুন, এবং SMS permission allow করুন.'],
   ['05', 'SMS Sender', 'bKash, Nagad, Rocket বা দরকারি sender rule add করুন। চাইলে contact থেকেও sender pick করা যাবে.'],
   ['06', 'Payment Verify', 'Customer payment SMS এলে Android app data sync করবে, তারপর dashboard থেকে transaction status দেখা যাবে.']
@@ -832,7 +832,7 @@ function AdminOverview({ data, onUpdateBrand, onUpdatePayment, onUpdateMerchantV
       <section className="mini-stat-grid">
         <MiniStat label="Active Brands" value={data.summary.activeBrands} sub="Approved and unlocked" />
         <MiniStat label="Pending Billing" value={data.summary.pendingBilling} sub="Waiting for admin action" />
-        <MiniStat label="Pending Merchant" value={data.summary.pendingMerchantVerifications} sub="Waiting for SMS or manual approval" />
+        <MiniStat label="Pending Merchant" value={data.summary.pendingMerchantVerifications} sub="Waiting for matching SMS TrxID" />
         <MiniStat label="Admin Account" value={formatMoney(data.summary.adminIncomeAmount)} sub={`${data.summary.adminIncomeCount} admin SMS records`} />
       </section>
       <section className="portal-grid-two align-start">
@@ -1248,7 +1248,7 @@ function SummaryCards({ portalData, websites, stats }) {
 function AddFundsPanel({ portalData, websites, onRenewWebsite }) {
   return (
     <section className="portal-grid-two align-start">
-      <InfoPanel title="Add Funds" eyebrow="Brand Charge" text="Send the exact opening charge to the admin wallet and submit the TrxID. If the admin SMS record matches, the brand activates without manual approval." items={[`Brand opening fee: ${formatMoney(portalData.adminPayment.brandOpeningFee || portalData.summary.brandOpeningFee)}`, `bKash: ${portalData.adminPayment.bkashNumber}`, `Nagad: ${portalData.adminPayment.nagadNumber}`, `Unpaid invoices: ${portalData.summary.unpaidInvoices}`]} />
+      <InfoPanel title="Add Funds" eyebrow="Brand Charge" text="Send the exact opening charge to the admin wallet and submit the TrxID. If the admin SMS record matches, the brand activates automatically without manual approval." items={[`Brand opening fee: ${formatMoney(portalData.adminPayment.brandOpeningFee || portalData.summary.brandOpeningFee)}`, `bKash: ${portalData.adminPayment.bkashNumber}`, `Nagad: ${portalData.adminPayment.nagadNumber}`, `Unpaid invoices: ${portalData.summary.unpaidInvoices}`]} />
       <section className="panel">
         <div className="section-title"><div><p className="eyebrow">Invoices</p><h2>Amounts waiting for payment</h2></div></div>
         <InvoiceTable items={portalData.invoices} />
@@ -1405,7 +1405,7 @@ function AndroidPanel({ client, response, portalData }) {
   return (
     <section className="portal-grid-two align-start">
       <AndroidCard client={client} response={response} devices={portalData.devices} websites={portalData.websites} />
-      <InfoPanel title="Android setup" eyebrow="SMS System" text="Android download unlocks after a brand is active. Auto activation happens when admin payment TrxID and amount match the admin SMS history." items={['Brand must be active before app download', 'Login only, no Android registration', 'Each SMS includes transaction ID, amount, provider, raw message, and device ID']} />
+      <InfoPanel title="Android setup" eyebrow="SMS System" text="Android download unlocks after a brand is active. Auto activation happens when admin payment TrxID and amount match the admin SMS history, with no manual approval needed." items={['Brand must be active before app download', 'Login only, no Android registration', 'Each SMS includes transaction ID, amount, provider, raw message, and device ID']} />
     </section>
   );
 }
@@ -1536,7 +1536,7 @@ function AndroidCard({ client, response, devices = [], websites = [] }) {
 }
 
 function TransactionTable({ items = [] }) {
-  if (!items.length) return <div className="empty-state">No merchant payment history yet. Verify a payment from Payment Link; it will stay pending until SMS matches or admin approves.</div>;
+  if (!items.length) return <div className="empty-state">No merchant payment history yet. Verify a payment from Payment Link; it will auto-approve when the SMS TrxID matches.</div>;
   return <div className="table-wrap"><table><thead><tr><th>#</th><th>Domain</th><th>TrxID</th><th>Order</th><th>Amount</th><th>Status</th></tr></thead><tbody>{items.map((item, index) => <tr key={item.id || item.transaction_id}><td>{index + 1}</td><td>{item.domain || '-'}</td><td><strong>{item.transaction_id}</strong><small>{item.buyerName || item.sellerName || ''}</small></td><td>{item.order_id || '-'}</td><td>{formatMoney(item.amount)}</td><td><span className={`status-chip ${transactionStatusClass(item.status)}`}>{formatBrandStatus(item.status || 'verified')}</span><small>{item.adminNote || ''}</small></td></tr>)}</tbody></table></div>;
 }
 
