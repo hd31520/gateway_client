@@ -22,20 +22,15 @@ const guideSteps = [
 ];
 
 const pricingPlans = [
-  ['1 Site', '1 Month', 'Tk 30', '1 Website'],
-  ['Free Plan', '3 Days', 'Tk 0', '1 Website'],
-  ['Basic 15', '15 Days', 'Tk 25', '1 Website'],
-  ['30 Days', '1 Month', 'Tk 50', '5 Websites'],
-  ['Business 30', '1 Month', 'Tk 100', '10 Websites'],
-  ['Basic 365', '1 Year', 'Tk 500', '5 Websites'],
-  ['Standard 365', '1 Year', 'Tk 1000', '10 Websites'],
-  ['Ultimate 365', '1 Year', 'Tk 3000', 'Unlimited Websites']
+  ['1 Website', '1 Month', 'Tk 60', '1 Website'],
+  ['5 Websites', '1 Month', 'Tk 200', 'Up to 5 Websites'],
+  ['20 Websites', '1 Month', 'Tk 400', 'Up to 20 Websites']
 ];
 
 const documentationSteps = [
   ['01', 'Account Login', 'Client portal থেকে account login বা registration করুন। Login থাকলে main page এবং dashboard দুই জায়গাতেই logout দেখা যাবে.'],
-  ['02', 'Brand Payment', 'Opening charge admin bKash/Nagad এ পাঠিয়ে brand form-এ TrxID দিন.'],
-  ['03', 'Auto Approval', 'TrxID এবং admin SMS TrxID মিললে কোনো manual approval লাগবে না; brand auto active হবে.'],
+  ['02', 'Brand Payment', 'Opening charge gateway bKash/Nagad এ পাঠিয়ে brand form-এ TrxID দিন.'],
+  ['03', 'Auto Approval', 'TrxID এবং gateway SMS TrxID মিললে কোনো manual approval লাগবে না; brand auto active হবে.'],
   ['04', 'Android App', 'Brand active হলে Android app download করুন, client account দিয়ে login করুন, এবং SMS permission allow করুন.'],
   ['05', 'SMS Sender', 'bKash, Nagad, Rocket বা দরকারি sender rule add করুন। চাইলে contact থেকেও sender pick করা যাবে.'],
   ['06', 'Payment Verify', 'Customer payment SMS এলে Android app data sync করবে, তারপর dashboard থেকে transaction status দেখা যাবে.']
@@ -44,7 +39,7 @@ const documentationSteps = [
 const documentationNotes = [
   'Android app home screen-এ server/API link দেখানো হয় না.',
   'Logout করলে app local session clear করে এবং server session revoke করার চেষ্টা করে.',
-  'Website credential matched admin payment SMS পেলে unlock হয়.',
+  'Website credential matched gateway payment SMS পেলে unlock হয়.',
   'Payment verify করতে transaction ID এবং amount মিলতে হবে.'
 ];
 
@@ -158,7 +153,7 @@ function computePlanAmount(siteCount) {
 }
 
 function App() {
-  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '');
+  const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || localStorage.getItem(ADMIN_TOKEN_KEY) || '');
   const [adminToken, setAdminToken] = useState(() => localStorage.getItem(ADMIN_TOKEN_KEY) || '');
   const [client, setClient] = useState(null);
   const [admin, setAdmin] = useState(null);
@@ -176,7 +171,6 @@ function App() {
   const [loadingAdmin, setLoadingAdmin] = useState(false);
   const [view, setView] = useState(() => {
     const hashView = window.location.hash.replace('#', '').toLowerCase();
-    if (hashView === 'admin') return 'admin';
     if (hashView === 'portal') return 'portal';
     if (localStorage.getItem(ADMIN_TOKEN_KEY)) return 'admin';
     if (localStorage.getItem(TOKEN_KEY)) return 'portal';
@@ -195,8 +189,8 @@ function App() {
   }, [portalData.summary, websites]);
 
   useEffect(() => {
-    if (token && !adminToken) loadClient();
-  }, [token, adminToken]);
+    if (token) loadClient();
+  }, [token]);
 
   useEffect(() => {
     if (adminToken) loadAdmin(adminToken);
@@ -233,7 +227,7 @@ function App() {
     setLoadingAdmin(false);
     if (!result.ok) {
       if (result.status === 401 || result.status === 403) await logoutAdmin(false, false);
-      else setAdminMessage(errorMessage(result.data, 'Admin dashboard load failed'));
+      else setAdminMessage(errorMessage(result.data, 'Operations dashboard load failed'));
       return;
     }
     setAdmin(result.data.admin || admin);
@@ -254,8 +248,8 @@ function App() {
     const account = result.data.client || null;
     const adminSession = isAdminAccount(account);
     if (adminSession) {
-      localStorage.removeItem(TOKEN_KEY);
-      setToken('');
+      localStorage.setItem(TOKEN_KEY, result.data.token);
+      setToken(result.data.token);
       localStorage.setItem(ADMIN_TOKEN_KEY, result.data.token);
       setAdminToken(result.data.token);
       setAdmin(account);
@@ -326,7 +320,7 @@ function App() {
     setClient(null);
     setWebsites([]);
     setPortalData(emptyPortalData);
-    setResponse({ success: true, message: 'Admin logged out' });
+    setResponse({ success: true, message: 'Logged out' });
     if (goHome) setView('home');
   }
 
@@ -385,7 +379,7 @@ function App() {
       setWebsiteMessage(errorMessage(result.data, 'Website add failed'));
       return false;
     }
-    setWebsiteMessage(result.data.message || 'Brand saved. API key unlocks when admin SMS payment matches.');
+    setWebsiteMessage(result.data.message || 'Brand saved. API key unlocks when gateway SMS payment matches.');
     await loadClient();
     setActiveMenu(result.data.autoApproved ? 'Developer Docs' : 'Add Funds');
     return true;
@@ -401,7 +395,7 @@ function App() {
     });
     if (!result.ok) return errorMessage(result.data, 'Renew failed');
     await loadClient();
-    return result.data.message || `Payment TrxID saved for Tk ${amount}. Access will update when admin SMS matches.`;
+    return result.data.message || `Payment TrxID saved for Tk ${amount}. Access will update when gateway SMS matches.`;
   }
 
   async function verifyPayment(payload) {
@@ -518,7 +512,7 @@ function App() {
       hasClientSession={Boolean(token)}
       hasAdminSession={isAdminSession}
       onOpenPortal={() => setView('portal')}
-      onOpenAdmin={() => setView('admin')}
+      onOpenAdmin={() => setView(isAdminSession ? 'admin' : 'portal')}
       onLogout={() => logout(false)}
       onLogoutAdmin={() => logoutAdmin(false)}
     />
@@ -536,10 +530,10 @@ function Landing({ hasClientSession, hasAdminSession, onOpenPortal, onOpenAdmin,
           ))}
         </nav>
         <div className="top-actions">
-          <button type="button" className="ghost-button" onClick={onOpenAdmin}>Admin</button>
           <button type="button" onClick={onOpenPortal}>Dashboard</button>
-          {hasClientSession ? <button type="button" className="danger-button" onClick={onLogout}>Logout</button> : null}
-          {hasAdminSession ? <button type="button" className="danger-button" onClick={onLogoutAdmin}>Admin Logout</button> : null}
+          {hasClientSession && !hasAdminSession ? <button type="button" className="danger-button" onClick={onLogout}>Logout</button> : null}
+          {hasAdminSession ? <button type="button" className="ghost-button" onClick={onOpenAdmin}>Operations</button> : null}
+          {hasAdminSession ? <button type="button" className="danger-button" onClick={onLogoutAdmin}>Logout</button> : null}
         </div>
       </header>
 
@@ -551,8 +545,8 @@ function Landing({ hasClientSession, hasAdminSession, onOpenPortal, onOpenAdmin,
           <p>Experience efficient and secure payment solutions for your business with Android SMS forwarding, transaction verification, and developer APIs.</p>
           <div className="button-row">
             <button type="button" onClick={onOpenPortal}>Open Portal</button>
-            <button type="button" className="ghost-button" onClick={onOpenAdmin}>Admin Panel</button>
-            {hasClientSession ? <button type="button" className="danger-button" onClick={onLogout}>Logout</button> : null}
+            {hasAdminSession ? <button type="button" className="ghost-button" onClick={onOpenAdmin}>Operations</button> : null}
+            {hasClientSession && !hasAdminSession ? <button type="button" className="danger-button" onClick={onLogout}>Logout</button> : null}
           </div>
         </div>
         <div className="hero-visual">
@@ -665,7 +659,7 @@ function DocumentationSection() {
       <SectionIntro
         eyebrow="Documentation"
         title="সহজ সেটআপ ডকুমেন্ট"
-        text="শুধু দরকারি ধাপগুলো রাখা হয়েছে, যাতে client, admin, এবং Android app setup দ্রুত বুঝতে পারেন."
+        text="শুধু দরকারি ধাপগুলো রাখা হয়েছে, যাতে merchant account, operations, এবং Android app setup দ্রুত বুঝতে পারেন."
       />
       <div className="doc-flow" aria-hidden="true">
         <span />
@@ -710,7 +704,7 @@ function Portal(props) {
       ) : null}
       <section className="portal-main">
         <header className="portal-topbar">
-          <div><p className="eyebrow">Dashboard</p><h1>{token ? activeMenu : 'Client Login'}</h1></div>
+          <div><p className="eyebrow">Dashboard</p><h1>{token ? activeMenu : 'Account Login'}</h1></div>
           <div className="portal-actions">
             {token ? <button type="button" className="ghost-button" onClick={props.onRefresh}>Refresh</button> : null}
             {token ? <button type="button" className="danger-button" onClick={() => onLogout(true)}>Logout</button> : <button type="button" onClick={onHome}>Home</button>}
@@ -726,7 +720,7 @@ function PortalAuth({ onAuth, authMessage, busy, onHome }) {
   return (
     <section className="portal-auth-grid">
       <div className="auth-intro-card">
-        <p className="eyebrow">Client Portal</p>
+        <p className="eyebrow">Merchant Portal</p>
         <h2>Login or create your merchant account.</h2>
         <p>After login, manage websites, renew plans, copy API keys, verify payments, and connect the Android app.</p>
         <button type="button" className="ghost-button" onClick={onHome}>Back to Home</button>
@@ -739,7 +733,7 @@ function PortalAuth({ onAuth, authMessage, busy, onHome }) {
 function AuthPanel({ onSubmit, message, busy }) {
   return (
     <section className="auth-grid">
-      <AuthForm title="Login" eyebrow="Existing client" mode="login" busy={busy} onSubmit={onSubmit} />
+      <AuthForm title="Login" eyebrow="Existing account" mode="login" busy={busy} onSubmit={onSubmit} />
       <AuthForm title="Create Account" eyebrow="New merchant" mode="register" busy={busy} onSubmit={onSubmit} />
       {message ? <p className="wide-message panel">{textMessage(message)}</p> : null}
     </section>
@@ -767,7 +761,7 @@ function AdminDashboard(props) {
       {adminToken ? (
         <aside className="portal-sidebar">
           <button type="button" className="brand sidebar-brand" onClick={onHome}><span>G</span>GatewayFlow</button>
-          <div className="theme-pill">admin console</div>
+          <div className="theme-pill">operations</div>
           <nav>
             {adminMenuItems.map((item) => <button type="button" key={item} className={activeAdminMenu === item ? 'active' : ''} onClick={() => setActiveAdminMenu(item)}>{item}</button>)}
           </nav>
@@ -775,9 +769,9 @@ function AdminDashboard(props) {
       ) : null}
       <section className="portal-main">
         <header className="portal-topbar">
-          <div><p className="eyebrow">Admin Dashboard</p><h1>{adminToken ? activeAdminMenu : 'Admin Login'}</h1></div>
+          <div><p className="eyebrow">Operations</p><h1>{adminToken ? activeAdminMenu : 'Account Login'}</h1></div>
           <div className="portal-actions">
-            <button type="button" className="ghost-button" onClick={onOpenPortal}>Client Portal</button>
+            <button type="button" className="ghost-button" onClick={onOpenPortal}>Merchant Portal</button>
             {adminToken ? <button type="button" className="ghost-button" onClick={props.onRefresh}>Refresh</button> : null}
             {adminToken ? <button type="button" className="danger-button" onClick={() => onLogout(true)}>Logout</button> : <button type="button" onClick={onHome}>Home</button>}
           </div>
@@ -793,8 +787,8 @@ function AdminAuth({ onAuth, adminMessage, busy, onHome }) {
     <section className="portal-auth-grid">
       <div className="auth-intro-card">
         <p className="eyebrow">Control Room</p>
-        <h2>Same login for client and admin.</h2>
-        <p>Sign in with the normal account form. If the account role is admin, this dashboard opens automatically and client access stays available.</p>
+        <h2>Same login for every account.</h2>
+        <p>Sign in with the normal account form. Privileged accounts open this workspace automatically and merchant access stays available.</p>
         <button type="button" className="ghost-button" onClick={onHome}>Back to Home</button>
       </div>
       <section className="auth-grid">
@@ -807,7 +801,7 @@ function AdminAuth({ onAuth, adminMessage, busy, onHome }) {
 
 function AdminContent(props) {
   const data = normalizeAdminData(props.adminData);
-  const banner = props.loadingAdmin ? 'Refreshing admin dashboard data...' : props.adminMessage;
+  const banner = props.loadingAdmin ? 'Refreshing operations data...' : props.adminMessage;
 
   return (
     <div className="dashboard-content admin-content">
@@ -840,9 +834,9 @@ function AdminOverview({ data, onUpdateBrand, onUpdatePayment, onUpdateMerchantV
       </section>
       <section className="mini-stat-grid">
         <MiniStat label="Active Brands" value={data.summary.activeBrands} sub="Approved and unlocked" />
-        <MiniStat label="Pending Billing" value={data.summary.pendingBilling} sub="Waiting for admin action" />
+        <MiniStat label="Pending Billing" value={data.summary.pendingBilling} sub="Waiting for review" />
         <MiniStat label="Pending Merchant" value={data.summary.pendingMerchantVerifications} sub="Waiting for matching SMS TrxID" />
-        <MiniStat label="Admin Account" value={formatMoney(data.summary.adminIncomeAmount)} sub={`${data.summary.adminIncomeCount} admin SMS records`} />
+        <MiniStat label="Gateway Account" value={formatMoney(data.summary.adminIncomeAmount)} sub={`${data.summary.adminIncomeCount} gateway SMS records`} />
       </section>
       <section className="portal-grid-two align-start">
         <AdminBrandQueue items={pendingBrands} onUpdateBrand={onUpdateBrand} />
@@ -970,9 +964,9 @@ function AdminHistoryPanel({ data }) {
   const items = data.accountHistory.filter((item) => searchMatches(item, ['transaction_id', 'type', 'domain', 'brandName', 'clientEmail', 'provider', 'sender', 'status'], query));
   return (
     <section className="panel">
-      <div className="section-title"><div><p className="eyebrow">Account History</p><h2>Admin payment ledger</h2></div><span className="pill">{formatMoney(data.summary.adminIncomeAmount)}</span></div>
+      <div className="section-title"><div><p className="eyebrow">Account History</p><h2>Gateway payment ledger</h2></div><span className="pill">{formatMoney(data.summary.adminIncomeAmount)}</span></div>
       <section className="mini-stat-grid">
-        <MiniStat label="Admin SMS Records" value={data.summary.adminIncomeCount} sub="Payments received on admin wallet" />
+        <MiniStat label="Gateway SMS Records" value={data.summary.adminIncomeCount} sub="Payments received on gateway wallet" />
         <MiniStat label="Used Amount" value={formatMoney(Math.max((data.summary.adminIncomeAmount || 0) - (data.summary.unusedAdminAmount || 0), 0))} sub="Applied to brand opening or renewal" />
         <MiniStat label="Unused Amount" value={formatMoney(data.summary.unusedAdminAmount)} sub="Available for matching" />
       </section>
@@ -1028,7 +1022,7 @@ function AdminSettingsPanel({ data }) {
   const config = data.config;
   return (
     <section className="portal-grid-two align-start">
-      <InfoPanel title="Admin Wallets" eyebrow="Settings" text="These values come from the server environment and are used by client brand opening instructions." items={[`Admin email: ${config.email || 'Not configured'}`, `bKash: ${config.bkashNumber || 'Not configured'}`, `Nagad: ${config.nagadNumber || 'Not configured'}`, `Brand opening fee: ${formatMoney(config.brandOpeningFee)}`]} />
+      <InfoPanel title="Gateway Wallets" eyebrow="Settings" text="These values come from the server environment and are used by brand opening instructions." items={[`Owner email: ${config.email || 'Not configured'}`, `bKash: ${config.bkashNumber || 'Not configured'}`, `Nagad: ${config.nagadNumber || 'Not configured'}`, `Brand opening fee: ${formatMoney(config.brandOpeningFee)}`]} />
       <InfoPanel title="System Assets" eyebrow="Runtime" text="Android app and recent portal records used by the workspace." items={[`Android app: ${config.androidAppDownloadUrl || '/gatewayflow-android.apk'}`, `Recent clients loaded: ${data.clients.length}`, `Recent brands loaded: ${data.brands.length}`]} />
     </section>
   );
@@ -1058,9 +1052,9 @@ function AdminBrandTable({ items = [], onUpdateBrand, compact = false }) {
 function AdminBrandActions({ brand, onUpdateBrand }) {
   return (
     <div className="table-actions">
-      <button type="button" className="small" onClick={() => onUpdateBrand({ websiteId: brand.id, brandStatus: 'active', paymentStatus: 'paid', months: 1, adminNote: 'Approved from admin dashboard' })}>Approve</button>
-      <button type="button" className="ghost-button small" onClick={() => onUpdateBrand({ websiteId: brand.id, brandStatus: 'suspended', paymentStatus: 'unpaid', adminNote: 'Suspended by admin' })}>Suspend</button>
-      <button type="button" className="danger-button small" onClick={() => onUpdateBrand({ websiteId: brand.id, brandStatus: 'rejected', paymentStatus: 'failed', adminNote: 'Rejected by admin' })}>Reject</button>
+      <button type="button" className="small" onClick={() => onUpdateBrand({ websiteId: brand.id, brandStatus: 'active', paymentStatus: 'paid', months: 1, adminNote: 'Approved from operations dashboard' })}>Approve</button>
+      <button type="button" className="ghost-button small" onClick={() => onUpdateBrand({ websiteId: brand.id, brandStatus: 'suspended', paymentStatus: 'unpaid', adminNote: 'Suspended from operations dashboard' })}>Suspend</button>
+      <button type="button" className="danger-button small" onClick={() => onUpdateBrand({ websiteId: brand.id, brandStatus: 'rejected', paymentStatus: 'failed', adminNote: 'Rejected from operations dashboard' })}>Reject</button>
     </div>
   );
 }
@@ -1073,15 +1067,15 @@ function AdminBillingTable({ items = [], onUpdateBrand, compact = false }) {
         <thead><tr><th>Brand</th><th>Client</th><th>TrxID</th>{compact ? null : <th>Note</th>}<th>Status</th><th>Actions</th></tr></thead>
         <tbody>{items.map((request) => (
           <tr key={request.id}>
-            <td><strong>{request.domain || request.websiteId}</strong><small>{request.months || 1} month renewal</small></td>
+            <td><strong>{request.domain || request.websiteId}</strong><small>{request.months || 1} month · {request.siteCount || 1} website plan</small></td>
             <td>{request.clientEmail || '-'}<small>{request.clientName || ''}</small></td>
             <td><strong>{request.transaction_id || '-'}</strong><small>{formatMoney(request.amount)}</small></td>
             {compact ? null : <td className="admin-message-cell">{request.note || request.adminNote || '-'}</td>}
             <td><span className={`badge ${statusBadgeClass(request.status)}`}>{formatBrandStatus(request.status)}</span><small>{formatDate(request.createdAt)}</small></td>
             <td>
               <div className="table-actions">
-                <button type="button" className="small" onClick={() => onUpdateBrand({ billingRequestId: request.id, websiteId: request.websiteId, brandStatus: 'active', paymentStatus: 'paid', months: request.months || 1, adminNote: 'Billing approved from admin dashboard' })}>Approve</button>
-                <button type="button" className="danger-button small" onClick={() => onUpdateBrand({ billingRequestId: request.id, websiteId: request.websiteId, brandStatus: 'rejected', paymentStatus: 'failed', adminNote: 'Billing rejected by admin' })}>Reject</button>
+                <button type="button" className="small" onClick={() => onUpdateBrand({ billingRequestId: request.id, websiteId: request.websiteId, brandStatus: 'active', paymentStatus: 'paid', months: request.months || 1, adminNote: 'Billing approved from operations dashboard' })}>Approve</button>
+                <button type="button" className="danger-button small" onClick={() => onUpdateBrand({ billingRequestId: request.id, websiteId: request.websiteId, brandStatus: 'rejected', paymentStatus: 'failed', adminNote: 'Billing rejected from operations dashboard' })}>Reject</button>
               </div>
             </td>
           </tr>
@@ -1107,8 +1101,8 @@ function AdminMerchantVerificationTable({ items = [], onUpdateMerchantVerificati
             <td><span className={`badge ${statusBadgeClass(item.status)}`}>{formatBrandStatus(item.status)}</span><small>{item.adminNote || item.source || ''}</small></td>
             <td>
               <div className="table-actions">
-                <button type="button" className="small" onClick={() => onUpdateMerchantVerification({ id: item.id, status: 'manual_approved', adminNote: 'Approved from admin dashboard' })}>Approve</button>
-                <button type="button" className="danger-button small" onClick={() => onUpdateMerchantVerification({ id: item.id, status: 'rejected', adminNote: 'Rejected from admin dashboard' })}>Reject</button>
+                <button type="button" className="small" onClick={() => onUpdateMerchantVerification({ id: item.id, status: 'manual_approved', adminNote: 'Approved from operations dashboard' })}>Approve</button>
+                <button type="button" className="danger-button small" onClick={() => onUpdateMerchantVerification({ id: item.id, status: 'rejected', adminNote: 'Rejected from operations dashboard' })}>Reject</button>
               </div>
             </td>
           </tr>
@@ -1146,7 +1140,7 @@ function AdminPaymentsTable({ items = [], onUpdatePayment }) {
 }
 
 function AdminHistoryTable({ items = [] }) {
-  if (!items.length) return <div className="empty-state">No admin account history matches this view.</div>;
+  if (!items.length) return <div className="empty-state">No gateway account history matches this view.</div>;
   return (
     <div className="table-wrap">
       <table className="admin-table">
@@ -1154,7 +1148,7 @@ function AdminHistoryTable({ items = [] }) {
         <tbody>{items.map((item) => (
           <tr key={item.id || item.transaction_id}>
             <td>{formatDate(item.receivedAt || item.createdAt)}</td>
-            <td><strong>{item.type}</strong><small>{item.provider || item.sender || 'admin wallet'}</small></td>
+            <td><strong>{item.type}</strong><small>{item.provider || item.sender || 'gateway wallet'}</small></td>
             <td>{item.domain || '-'}<small>{item.clientEmail || item.brandName || ''}</small></td>
             <td><strong>{item.transaction_id}</strong><small>{item.usedFor || 'unused'}</small></td>
             <td>{formatMoney(item.amount)}</td>
@@ -1175,12 +1169,12 @@ function AdminClientsTable({ items = [], onUpdateUser }) {
         <tbody>{items.map((client) => (
           <tr key={client.id}>
             <td><strong>{client.name || 'Client'}</strong><small>{client.email}</small></td>
-            <td><span className={`badge ${client.role === 'admin' ? 'active' : ''}`}>{client.role || 'user'}</span></td>
+            <td><span className={`badge ${client.role === 'admin' ? 'active' : ''}`}>{client.role === 'admin' ? 'operator' : (client.role || 'user')}</span></td>
             <td><span className={`badge ${statusBadgeClass(client.status || 'active')}`}>{client.status || 'active'}</span></td>
             <td>{formatDate(client.createdAt)}</td>
             <td>
               <div className="table-actions">
-                <button type="button" className="ghost-button small" onClick={() => onUpdateUser({ userId: client.id, role: client.role === 'admin' ? 'user' : 'admin' })}>{client.role === 'admin' ? 'Make User' : 'Make Admin'}</button>
+                <button type="button" className="ghost-button small" onClick={() => onUpdateUser({ userId: client.id, role: client.role === 'admin' ? 'user' : 'admin' })}>{client.role === 'admin' ? 'Make User' : 'Make Operator'}</button>
                 <button type="button" className={`${client.status === 'blocked' ? '' : 'danger-button'} small`} onClick={() => onUpdateUser({ userId: client.id, status: client.status === 'blocked' ? 'active' : 'blocked' })}>{client.status === 'blocked' ? 'Activate' : 'Block'}</button>
               </div>
             </td>
@@ -1257,7 +1251,7 @@ function SummaryCards({ portalData, websites, stats }) {
 function AddFundsPanel({ portalData, websites, onRenewWebsite }) {
   return (
     <section className="portal-grid-two align-start">
-      <InfoPanel title="Add Funds" eyebrow="Brand Charge" text="Send the exact opening charge to the admin wallet and submit the TrxID. If the admin SMS record matches, the brand activates automatically without manual approval." items={[`Brand opening fee: ${formatMoney(portalData.adminPayment.brandOpeningFee || portalData.summary.brandOpeningFee)}`, `bKash: ${portalData.adminPayment.bkashNumber}`, `Nagad: ${portalData.adminPayment.nagadNumber}`, `Unpaid invoices: ${portalData.summary.unpaidInvoices}`]} />
+      <InfoPanel title="Add Funds" eyebrow="Brand Charge" text="Send the exact opening charge to the gateway wallet and submit the TrxID. If the gateway SMS record matches, the brand activates automatically without manual approval." items={[`Brand opening fee: ${formatMoney(portalData.adminPayment.brandOpeningFee || portalData.summary.brandOpeningFee)}`, `bKash: ${portalData.adminPayment.bkashNumber}`, `Nagad: ${portalData.adminPayment.nagadNumber}`, `Unpaid invoices: ${portalData.summary.unpaidInvoices}`]} />
       <section className="panel">
         <div className="section-title"><div><p className="eyebrow">Invoices</p><h2>Amounts waiting for payment</h2></div></div>
         <InvoiceTable items={portalData.invoices} />
@@ -1269,7 +1263,7 @@ function AddFundsPanel({ portalData, websites, onRenewWebsite }) {
 }
 
 function BillingQuickSubmit({ websites = [], onSubmit }) {
-  const [form, setForm] = useState({ websiteId: '', transactionId: '' });
+  const [form, setForm] = useState({ websiteId: '', transactionId: '', siteCount: '1' });
   const [message, setMessage] = useState('');
   useEffect(() => {
     if (!form.websiteId && websites[0]?.id) setForm((current) => ({ ...current, websiteId: websites[0].id }));
@@ -1283,7 +1277,7 @@ function BillingQuickSubmit({ websites = [], onSubmit }) {
       return;
     }
     setMessage('Sending billing request...');
-    setMessage(await onSubmit(site, form.transactionId.trim()));
+    setMessage(await onSubmit(site, form.transactionId.trim(), Number(form.siteCount || 1)));
     setForm((current) => ({ ...current, transactionId: '' }));
   }
 
@@ -1291,7 +1285,12 @@ function BillingQuickSubmit({ websites = [], onSubmit }) {
     <form className="billing-submit-card" onSubmit={submit}>
       <h3>Submit payment TrxID</h3>
       <select value={form.websiteId} onChange={(event) => setForm({ ...form, websiteId: event.target.value })} required>{websites.length ? websites.map((site) => <option key={site.id} value={site.id}>{site.name || site.domain}</option>) : <option value="">Open a brand first</option>}</select>
-      <input value={form.transactionId} placeholder="Admin payment transaction ID" onChange={(event) => setForm({ ...form, transactionId: event.target.value })} required />
+      <select value={form.siteCount} onChange={(event) => setForm({ ...form, siteCount: event.target.value })} required>
+        <option value="1">1 website - Tk 60</option>
+        <option value="5">5 websites - Tk 200</option>
+        <option value="20">20 websites - Tk 400</option>
+      </select>
+      <input value={form.transactionId} placeholder="Gateway payment transaction ID" onChange={(event) => setForm({ ...form, transactionId: event.target.value })} required />
       <button type="submit">Send For Approval</button>
       <Message text={message} />
     </form>
@@ -1414,7 +1413,7 @@ function AndroidPanel({ client, response, portalData }) {
   return (
     <section className="portal-grid-two align-start">
       <AndroidCard client={client} response={response} devices={portalData.devices} websites={portalData.websites} />
-      <InfoPanel title="Android setup" eyebrow="SMS System" text="Android download unlocks after a brand is active. Auto activation happens when admin payment TrxID and amount match the admin SMS history, with no manual approval needed." items={['Brand must be active before app download', 'Login only, no Android registration', 'Each SMS includes transaction ID, amount, provider, raw message, and device ID']} />
+      <InfoPanel title="Android setup" eyebrow="SMS System" text="Android download unlocks after a brand is active. Auto activation happens when gateway payment TrxID and amount match the gateway SMS history, with no manual approval needed." items={['Brand must be active before app download', 'Login only, no Android registration', 'Each SMS includes transaction ID, amount, provider, raw message, and device ID']} />
     </section>
   );
 }
@@ -1466,13 +1465,13 @@ function WebsiteForm({ onSubmit, message, adminPayment = emptyPortalData.adminPa
   return (
     <form className="panel form-card" onSubmit={submit}>
       <p className="eyebrow">Brands</p><h2>Open Brand</h2>
-      <div className="route-card compact">Opening charge {formatMoney(adminPayment.brandOpeningFee)}. Pay admin bKash {adminPayment.bkashNumber} or Nagad {adminPayment.nagadNumber}, then enter the TrxID for instant SMS matching.</div>
+      <div className="route-card compact">Opening charge {formatMoney(adminPayment.brandOpeningFee)}. Pay gateway bKash {adminPayment.bkashNumber} or Nagad {adminPayment.nagadNumber}, then enter the TrxID for instant SMS matching.</div>
       <label htmlFor="websiteName">Brand name</label><input id="websiteName" value={form.name} placeholder="My Shop" onChange={(event) => update('name', event.target.value)} required />
       <label htmlFor="websiteDomain">Domain</label><input id="websiteDomain" value={form.domain} placeholder="example.com" onChange={(event) => update('domain', event.target.value)} required />
       <label htmlFor="walletProvider">Where will this brand receive money?</label><select id="walletProvider" value={form.walletProvider} onChange={(event) => update('walletProvider', event.target.value)} required><option value="bkash">bKash</option><option value="nagad">Nagad</option><option value="rocket">Rocket</option><option value="upay">Upay</option><option value="bank">Bank</option><option value="other">Other</option></select>
       <label htmlFor="walletNumber">Receiver number</label><input id="walletNumber" value={form.walletNumber} placeholder="017XXXXXXXX" onChange={(event) => update('walletNumber', event.target.value)} required />
       <label htmlFor="receiverName">Receiver account name</label><input id="receiverName" value={form.receiverName} placeholder="Shop owner or brand wallet name" onChange={(event) => update('receiverName', event.target.value)} />
-      <label htmlFor="adminTransactionId">Admin payment TrxID</label><input id="adminTransactionId" value={form.transaction_id} placeholder="Payment transaction ID" onChange={(event) => update('transaction_id', event.target.value)} required />
+      <label htmlFor="adminTransactionId">Gateway payment TrxID</label><input id="adminTransactionId" value={form.transaction_id} placeholder="Payment transaction ID" onChange={(event) => update('transaction_id', event.target.value)} required />
       <button type="submit">Open Brand</button><Message text={message} />
     </form>
   );
@@ -1507,14 +1506,16 @@ function WebsiteList({ websites, onRenew }) {
 
 function WebsiteCard({ site, onRenew }) {
   const [transactionId, setTransactionId] = useState('');
+  const [siteCount, setSiteCount] = useState('1');
   const [message, setMessage] = useState('');
   const appDownloadUrl = absoluteDownloadUrl(site.appDownloadUrl);
   const unlocked = Boolean(site.androidAppEnabled || site.brandStatus === 'active');
   const actionLabel = unlocked ? 'Renew' : 'Activate';
   async function submit(event) {
     event.preventDefault();
-    setMessage(`Checking ${formatMoney(site.monthlyFee || site.brandCharge || 60)} admin payment...`);
-    const resultMessage = await onRenew(site, transactionId.trim());
+    const amount = computePlanAmount(Number(siteCount || 1));
+    setMessage(`Checking ${formatMoney(amount)} gateway payment...`);
+    const resultMessage = await onRenew(site, transactionId.trim(), Number(siteCount || 1));
     setMessage(resultMessage);
     if (/activated|applied|renewed|ready/i.test(resultMessage)) setTransactionId('');
   }
@@ -1526,11 +1527,20 @@ function WebsiteCard({ site, onRenew }) {
         <div><span>Charge</span><strong>{formatMoney(site.brandCharge || site.monthlyFee)}</strong></div>
         <div><span>Payment</span><strong>{site.paymentStatus || 'unpaid'}</strong></div>
       </div>
-      {unlocked ? <div className="api-key-line"><code>{site.apiKey}</code><button type="button" className="ghost-button small" onClick={() => copyText(site.apiKey)}>Copy</button></div> : <div className="empty-state compact-empty">API key unlocks automatically when admin SMS TrxID and amount match.</div>}
+      {unlocked ? <div className="api-key-line"><code>{site.apiKey}</code><button type="button" className="ghost-button small" onClick={() => copyText(site.apiKey)}>Copy</button></div> : <div className="empty-state compact-empty">API key unlocks automatically when gateway SMS TrxID and amount match.</div>}
       <div className="website-meta"><span>Paid until</span><strong>{site.paidUntil ? formatDate(site.paidUntil) : 'Not active'}</strong></div>
       {appDownloadUrl && unlocked ? <a className="ghost-button download-link" href={appDownloadUrl} download>Download Android App</a> : null}
       {site.adminNote ? <p className="message">{site.adminNote}</p> : null}
-      <form className="renew-form" onSubmit={submit}><input value={transactionId} onChange={(event) => setTransactionId(event.target.value)} placeholder={`${formatMoney(site.monthlyFee || site.brandCharge || 60)} admin payment TrxID`} required /><button type="submit">{actionLabel}</button><Message text={message} /></form>
+      <form className="renew-form" onSubmit={submit}>
+        <select value={siteCount} onChange={(event) => setSiteCount(event.target.value)} required>
+          <option value="1">1 website - Tk 60</option>
+          <option value="5">5 websites - Tk 200</option>
+          <option value="20">20 websites - Tk 400</option>
+        </select>
+        <input value={transactionId} onChange={(event) => setTransactionId(event.target.value)} placeholder={`${formatMoney(computePlanAmount(Number(siteCount || 1)))} gateway payment TrxID`} required />
+        <button type="submit">{actionLabel}</button>
+        <Message text={message} />
+      </form>
     </article>
   );
 }
@@ -1540,7 +1550,7 @@ function AndroidCard({ client, response, devices = [], websites = [] }) {
   const unlockedBrand = websites.find((site) => site.androidAppEnabled || site.brandStatus === 'active');
   const downloadUrl = absoluteDownloadUrl(unlockedBrand?.appDownloadUrl);
   return (
-    <section className="panel android-card"><p className="eyebrow">Android App</p><h2>SMS forwarding device</h2><p>{unlockedBrand ? `Brand ${unlockedBrand.name || unlockedBrand.domain} is active. Download the app and login with your client account.` : 'Open a brand first. Android app download unlocks after admin SMS payment matching.'}</p>{downloadUrl ? <a className="ghost-button download-link" href={downloadUrl} download>Download Android App</a> : <div className="empty-state compact-empty">No active brand yet. Submit the admin payment TrxID for SMS matching.</div>}<div className="device-preview"><span className="notch" /><strong>{lastDevice?.name || client?.email || 'client@example.com'}</strong><small>{lastDevice ? `Last seen ${formatDate(lastDevice.lastSeenAt)}` : 'Waiting for device login'}</small></div><pre>{JSON.stringify(response, null, 2)}</pre></section>
+    <section className="panel android-card"><p className="eyebrow">Android App</p><h2>SMS forwarding device</h2><p>{unlockedBrand ? `Brand ${unlockedBrand.name || unlockedBrand.domain} is active. Download the app and login with your merchant account.` : 'Open a brand first. Android app download unlocks after gateway SMS payment matching.'}</p>{downloadUrl ? <a className="ghost-button download-link" href={downloadUrl} download>Download Android App</a> : <div className="empty-state compact-empty">No active brand yet. Submit the gateway payment TrxID for SMS matching.</div>}<div className="device-preview"><span className="notch" /><strong>{lastDevice?.name || client?.email || 'merchant@example.com'}</strong><small>{lastDevice ? `Last seen ${formatDate(lastDevice.lastSeenAt)}` : 'Waiting for device login'}</small></div><pre>{JSON.stringify(response, null, 2)}</pre></section>
   );
 }
 
@@ -1618,7 +1628,7 @@ function DocsList({ docs = [] }) {
 
 function ApiKeyList({ websites = [] }) {
   const activeWebsites = websites.filter((site) => site.androidAppEnabled || site.brandStatus === 'active');
-  if (!activeWebsites.length) return <div className="empty-state">Open a brand with a matching admin payment TrxID to unlock API keys.</div>;
+  if (!activeWebsites.length) return <div className="empty-state">Open a brand with a matching gateway payment TrxID to unlock API keys.</div>;
   return <div className="website-list">{activeWebsites.map((site) => <div className="api-key-line" key={site.id}><code>{site.apiKey}</code><button type="button" className="ghost-button small" onClick={() => copyText(site.apiKey)}>Copy</button></div>)}</div>;
 }
 
