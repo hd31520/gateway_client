@@ -185,6 +185,85 @@ pre { overflow: auto; min-height: 220px; margin: 0; border-radius: 24px; padding
 .step-card { padding: 24px; }
 .step-number { display: inline-flex; width: 54px; height: 54px; align-items: center; justify-content: center; border-radius: 18px; background: var(--green); color: white; font-weight: 950; }
 .step-art { height: 120px; margin: 18px 0; border-radius: 24px; background: radial-gradient(circle at 30% 30%, #fff, var(--amber-soft), var(--mint)); }
+.docs-section { overflow: hidden; }
+.doc-flow {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 4px auto 24px;
+  max-width: 720px;
+}
+.doc-flow::before {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 50%;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--green), var(--amber), var(--blue));
+  content: "";
+  transform: translateY(-50%);
+}
+.doc-flow span {
+  position: relative;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  margin: 0 auto;
+  border: 3px solid #fffdf5;
+  border-radius: 999px;
+  background: var(--green);
+  box-shadow: 0 0 0 8px rgba(10, 116, 93, .12);
+  animation: doc-pulse 2.4s ease-in-out infinite;
+}
+.doc-flow span:nth-child(2) { animation-delay: .25s; background: var(--amber); }
+.doc-flow span:nth-child(3) { animation-delay: .5s; background: var(--blue); }
+.doc-flow span:nth-child(4) { animation-delay: .75s; background: var(--green-dark); }
+@keyframes doc-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 8px rgba(10, 116, 93, .12); }
+  50% { transform: scale(1.18); box-shadow: 0 0 0 14px rgba(246, 183, 70, .16); }
+}
+.doc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.doc-card {
+  min-height: 210px;
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  padding: 22px;
+  background: rgba(255,255,246,.88);
+  box-shadow: 0 14px 42px rgba(21, 42, 34, .08);
+  animation: doc-rise .72s ease both;
+  animation-delay: var(--delay, 0s);
+}
+.doc-card:hover { transform: translateY(-3px); }
+@keyframes doc-rise {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.doc-num {
+  display: inline-grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 16px;
+  border-radius: 16px;
+  background: #13251f;
+  color: #fffdf5;
+  font-weight: 950;
+}
+.doc-note-panel {
+  display: grid;
+  grid-template-columns: minmax(220px, .75fr) minmax(0, 1.25fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 18px;
+  border: 1px solid rgba(10, 116, 93, .18);
+  border-radius: 28px;
+  padding: 24px;
+  background: linear-gradient(135deg, rgba(223,248,236,.88), rgba(255,241,201,.7));
+}
+.doc-note-panel h3 { font-size: 26px; }
+.doc-note-panel ul { margin: 0; }
 .pricing-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .price-card { padding: 22px; }
 .price-card.hot { background: linear-gradient(145deg, rgba(223,248,236,.96), rgba(255,241,201,.94)); transform: translateY(-5px); }
@@ -336,6 +415,7 @@ td small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px
 
 @media (max-width: 1060px) {
   .feature-grid, .pricing-grid, .wallet-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .doc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .hero-section, .split-section, .portal-auth-grid { grid-template-columns: 1fr; }
   .portal-shell { grid-template-columns: 1fr; }
   .portal-sidebar { position: relative; height: auto; }
@@ -349,7 +429,8 @@ td small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px
   .hero-section { min-height: auto; padding: 24px; }
   .hero-visual { min-height: 390px; }
   .float-card.two { bottom: 12px; }
-  .feature-grid, .pricing-grid, .step-grid, .updates-grid, .metric-grid, .portal-grid-two, .wallet-grid, .mini-stat-grid, .auth-grid, .admin-filters, .admin-filters.single { grid-template-columns: 1fr; }
+  .feature-grid, .pricing-grid, .step-grid, .updates-grid, .metric-grid, .doc-grid, .doc-note-panel, .portal-grid-two, .wallet-grid, .mini-stat-grid, .auth-grid, .admin-filters, .admin-filters.single { grid-template-columns: 1fr; }
+  .doc-flow { grid-template-columns: repeat(4, minmax(24px, 1fr)); }
   .portal-main { padding: 14px; }
   .portal-topbar, .section-title, .website-card-top, .website-meta, .api-key-line { align-items: stretch; flex-direction: column; }
   .brand-detail-grid { grid-template-columns: 1fr; }
