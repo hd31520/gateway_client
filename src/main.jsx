@@ -187,8 +187,8 @@ function App() {
   }, [portalData.summary, websites]);
 
   useEffect(() => {
-    if (token) loadClient();
-  }, [token]);
+    if (token && !adminToken) loadClient();
+  }, [token, adminToken]);
 
   useEffect(() => {
     if (adminToken) loadAdmin(adminToken);
@@ -242,12 +242,12 @@ function App() {
       setAuthMessage(errorMessage(result.data, 'Authentication failed'));
       return;
     }
-    localStorage.setItem(TOKEN_KEY, result.data.token);
-    setToken(result.data.token);
     setClient(result.data.client || null);
     const account = result.data.client || null;
     const adminSession = isAdminAccount(account);
     if (adminSession) {
+      localStorage.removeItem(TOKEN_KEY);
+      setToken('');
       localStorage.setItem(ADMIN_TOKEN_KEY, result.data.token);
       setAdminToken(result.data.token);
       setAdmin(account);
@@ -261,6 +261,8 @@ function App() {
       }));
       setView('admin');
     } else {
+      localStorage.setItem(TOKEN_KEY, result.data.token);
+      setToken(result.data.token);
       localStorage.removeItem(ADMIN_TOKEN_KEY);
       setAdminToken('');
       setAdmin(null);
