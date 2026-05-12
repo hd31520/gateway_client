@@ -7,6 +7,8 @@ const TOKEN_KEY = 'gatewayClientToken';
 const ADMIN_TOKEN_KEY = 'gatewayAdminToken';
 const FALLBACK_GATEWAY_API_URL = 'https://payment-gateway-server-ten.vercel.app';
 const API_BASE_URL = resolveApiBaseUrl(import.meta.env.VITE_PAYMENT_GATEWAY_API_URL);
+const YEARLY_PLAN_MONTHS = 12;
+const YEARLY_PLAN_BILLABLE_MONTHS = 10;
 
 const featureCards = [
   ['Secure Transactions', 'Token based APIs, encrypted wallet credentials, and controlled verification keep payment data protected.'],
@@ -24,7 +26,19 @@ const guideSteps = [
 const pricingPlans = [
   ['1 Website', '1 Month', 'Tk 60', '1 Website'],
   ['5 Websites', '1 Month', 'Tk 200', 'Up to 5 Websites'],
-  ['20 Websites', '1 Month', 'Tk 400', 'Up to 20 Websites']
+  ['20 Websites', '1 Month', 'Tk 400', 'Up to 20 Websites'],
+  ['1 Website', '1 Year', 'Tk 600', '2 months free'],
+  ['5 Websites', '1 Year', 'Tk 2000', '2 months free'],
+  ['20 Websites', '1 Year', 'Tk 4000', '2 months free']
+];
+
+const planOptions = [
+  { siteCount: 1, months: 1 },
+  { siteCount: 5, months: 1 },
+  { siteCount: 20, months: 1 },
+  { siteCount: 1, months: 12 },
+  { siteCount: 5, months: 12 },
+  { siteCount: 20, months: 12 }
 ];
 
 const documentationSteps = [
@@ -170,6 +184,29 @@ function computePlanAmount(siteCount) {
   if (n <= 5) return 200;
   if (n <= 20) return 400;
   return 400 + Math.max(0, n - 20) * 10;
+}
+
+function computePlanTotalAmount(siteCount, months = 1) {
+  const cleanMonths = Number(months || 1) || 1;
+  const billableMonths = cleanMonths === YEARLY_PLAN_MONTHS ? YEARLY_PLAN_BILLABLE_MONTHS : cleanMonths;
+  return computePlanAmount(siteCount) * billableMonths;
+}
+
+function planOptionValue(option) {
+  return `${option.siteCount}:${option.months}`;
+}
+
+function parsePlanOption(value) {
+  const [siteCount, months] = String(value || '1:1').split(':').map((item) => Number(item) || 1);
+  return { siteCount, months };
+}
+
+function planOptionLabel(option) {
+  const total = computePlanTotalAmount(option.siteCount, option.months);
+  const duration = option.months === YEARLY_PLAN_MONTHS ? '1 year' : `${option.months} month`;
+  const sites = option.siteCount === 1 ? '1 website' : `${option.siteCount} websites`;
+  const suffix = option.months === YEARLY_PLAN_MONTHS ? ' - 2 months free' : '';
+  return `${sites} - ${duration} - ${formatMoney(total)}${suffix}`;
 }
 
 function App() {
@@ -419,17 +456,18 @@ function App() {
     return true;
   }
 
-  async function renewWebsite(site, transactionId, siteCount = 1) {
+  async function renewWebsite(site, transactionId, siteCount = 1, months = 1) {
     const sc = Number(siteCount || 1) || 1;
-    const amount = siteCount ? computePlanAmount(sc) : Number(site.brandCharge || site.monthlyFee || portalData.adminPayment.brandOpeningFee || 60);
+    const duration = Number(months || 1) || 1;
+    const amount = siteCount ? computePlanTotalAmount(sc, duration) : Number(site.brandCharge || site.monthlyFee || portalData.adminPayment.brandOpeningFee || 60);
     const result = await api('/client/me?resource=billing', {
       method: 'POST',
       auth: true,
-      body: { websiteId: site.id, transaction_id: transactionId, amount, months: 1, siteCount: sc }
+      body: { websiteId: site.id, transaction_id: transactionId, amount, months: duration, siteCount: sc }
     });
     if (!result.ok) return errorMessage(result.data, 'Renew failed');
     await loadClient();
-    return result.data.message || `Payment TrxID saved for Tk ${amount}. Access will update when gateway SMS matches.`;
+    return result.data.message || `Payment TrxID saved for Tk ${amount}. Access will update for ${duration} month${duration > 1 ? 's' : ''} when gateway SMS matches.`;
   }
 
   async function verifyPayment(payload) {
@@ -1087,6 +1125,7 @@ function AdminBrandActions({ brand, onUpdateBrand }) {
   return (
     <div className="table-actions">
       <button type="button" className="small" onClick={() => onUpdateBrand({ websiteId: brand.id, brandStatus: 'active', paymentStatus: 'paid', months: 1, adminNote: 'Approved from operations dashboard' })}>Approve</button>
+      <button type="button" className="ghost-button small" onClick={() => onUpdateBrand({ websiteId: brand.id, brandStatus: 'active', paymentStatus: 'paid', months: 12, adminNote: 'Yearly permission approved from operations dashboard' })}>Approve Yearly</button>
       <button type="button" className="ghost-button small" onClick={() => onUpdateBrand({ websiteId: brand.id, brandStatus: 'suspended', paymentStatus: 'unpaid', adminNote: 'Suspended from operations dashboard' })}>Suspend</button>
       <button type="button" className="danger-button small" onClick={() => onUpdateBrand({ websiteId: brand.id, brandStatus: 'rejected', paymentStatus: 'failed', adminNote: 'Rejected from operations dashboard' })}>Reject</button>
     </div>
@@ -1101,7 +1140,7 @@ function AdminBillingTable({ items = [], onUpdateBrand, compact = false }) {
         <thead><tr><th>Brand</th><th>Client</th><th>TrxID</th>{compact ? null : <th>Note</th>}<th>Status</th><th>Actions</th></tr></thead>
         <tbody>{items.map((request) => (
           <tr key={request.id}>
-            <td><strong>{request.domain || request.websiteId}</strong><small>{request.months || 1} month · {request.siteCount || 1} website plan</small></td>
+            <td><strong>{request.domain || request.websiteId}</strong><small>{request.months || 1} month{Number(request.months || 1) > 1 ? 's' : ''} · {request.siteCount || 1} website plan</small></td>
             <td>{request.clientEmail || '-'}<small>{request.clientName || ''}</small></td>
             <td><strong>{request.transaction_id || '-'}</strong><small>{formatMoney(request.amount)}</small></td>
             {compact ? null : <td className="admin-message-cell">{request.note || request.adminNote || '-'}</td>}
@@ -1109,6 +1148,7 @@ function AdminBillingTable({ items = [], onUpdateBrand, compact = false }) {
             <td>
               <div className="table-actions">
                 <button type="button" className="small" onClick={() => onUpdateBrand({ billingRequestId: request.id, websiteId: request.websiteId, brandStatus: 'active', paymentStatus: 'paid', months: request.months || 1, adminNote: 'Billing approved from operations dashboard' })}>Approve</button>
+                <button type="button" className="ghost-button small" onClick={() => onUpdateBrand({ billingRequestId: request.id, websiteId: request.websiteId, brandStatus: 'active', paymentStatus: 'paid', months: 12, adminNote: 'Yearly billing approved from operations dashboard' })}>Approve Yearly</button>
                 <button type="button" className="danger-button small" onClick={() => onUpdateBrand({ billingRequestId: request.id, websiteId: request.websiteId, brandStatus: 'rejected', paymentStatus: 'failed', adminNote: 'Billing rejected from operations dashboard' })}>Reject</button>
               </div>
             </td>
@@ -1297,7 +1337,7 @@ function AddFundsPanel({ portalData, websites, onRenewWebsite }) {
 }
 
 function BillingQuickSubmit({ websites = [], onSubmit }) {
-  const [form, setForm] = useState({ websiteId: '', transactionId: '', siteCount: '1' });
+  const [form, setForm] = useState({ websiteId: '', transactionId: '', plan: '1:1' });
   const [message, setMessage] = useState('');
   useEffect(() => {
     if (!form.websiteId && websites[0]?.id) setForm((current) => ({ ...current, websiteId: websites[0].id }));
@@ -1310,8 +1350,9 @@ function BillingQuickSubmit({ websites = [], onSubmit }) {
       setMessage('Select a brand first.');
       return;
     }
+    const plan = parsePlanOption(form.plan);
     setMessage('Sending billing request...');
-    setMessage(await onSubmit(site, form.transactionId.trim(), Number(form.siteCount || 1)));
+    setMessage(await onSubmit(site, form.transactionId.trim(), plan.siteCount, plan.months));
     setForm((current) => ({ ...current, transactionId: '' }));
   }
 
@@ -1319,10 +1360,8 @@ function BillingQuickSubmit({ websites = [], onSubmit }) {
     <form className="billing-submit-card" onSubmit={submit}>
       <h3>Submit payment TrxID</h3>
       <select value={form.websiteId} onChange={(event) => setForm({ ...form, websiteId: event.target.value })} required>{websites.length ? websites.map((site) => <option key={site.id} value={site.id}>{site.name || site.domain}</option>) : <option value="">Open a brand first</option>}</select>
-      <select value={form.siteCount} onChange={(event) => setForm({ ...form, siteCount: event.target.value })} required>
-        <option value="1">1 website - Tk 60</option>
-        <option value="5">5 websites - Tk 200</option>
-        <option value="20">20 websites - Tk 400</option>
+      <select value={form.plan} onChange={(event) => setForm({ ...form, plan: event.target.value })} required>
+        {planOptions.map((option) => <option key={planOptionValue(option)} value={planOptionValue(option)}>{planOptionLabel(option)}</option>)}
       </select>
       <input value={form.transactionId} placeholder="Gateway payment transaction ID" onChange={(event) => setForm({ ...form, transactionId: event.target.value })} required />
       <button type="submit">Send For Approval</button>
@@ -1540,16 +1579,17 @@ function WebsiteList({ websites, onRenew }) {
 
 function WebsiteCard({ site, onRenew }) {
   const [transactionId, setTransactionId] = useState('');
-  const [siteCount, setSiteCount] = useState('1');
+  const [plan, setPlan] = useState('1:1');
   const [message, setMessage] = useState('');
   const appDownloadUrl = absoluteDownloadUrl(site.appDownloadUrl);
   const unlocked = Boolean(site.androidAppEnabled || site.brandStatus === 'active');
   const actionLabel = unlocked ? 'Renew' : 'Activate';
   async function submit(event) {
     event.preventDefault();
-    const amount = computePlanAmount(Number(siteCount || 1));
+    const selectedPlan = parsePlanOption(plan);
+    const amount = computePlanTotalAmount(selectedPlan.siteCount, selectedPlan.months);
     setMessage(`Checking ${formatMoney(amount)} gateway payment...`);
-    const resultMessage = await onRenew(site, transactionId.trim(), Number(siteCount || 1));
+    const resultMessage = await onRenew(site, transactionId.trim(), selectedPlan.siteCount, selectedPlan.months);
     setMessage(resultMessage);
     if (/activated|applied|renewed|ready/i.test(resultMessage)) setTransactionId('');
   }
@@ -1566,12 +1606,10 @@ function WebsiteCard({ site, onRenew }) {
       {appDownloadUrl && unlocked ? <a className="ghost-button download-link" href={appDownloadUrl} download>Download Android App</a> : null}
       {site.adminNote ? <p className="message">{site.adminNote}</p> : null}
       <form className="renew-form" onSubmit={submit}>
-        <select value={siteCount} onChange={(event) => setSiteCount(event.target.value)} required>
-          <option value="1">1 website - Tk 60</option>
-          <option value="5">5 websites - Tk 200</option>
-          <option value="20">20 websites - Tk 400</option>
+        <select value={plan} onChange={(event) => setPlan(event.target.value)} required>
+          {planOptions.map((option) => <option key={planOptionValue(option)} value={planOptionValue(option)}>{planOptionLabel(option)}</option>)}
         </select>
-        <input value={transactionId} onChange={(event) => setTransactionId(event.target.value)} placeholder={`${formatMoney(computePlanAmount(Number(siteCount || 1)))} gateway payment TrxID`} required />
+        <input value={transactionId} onChange={(event) => setTransactionId(event.target.value)} placeholder={`${formatMoney(computePlanTotalAmount(parsePlanOption(plan).siteCount, parsePlanOption(plan).months))} gateway payment TrxID`} required />
         <button type="submit">{actionLabel}</button>
         <Message text={message} />
       </form>
