@@ -139,6 +139,20 @@ const emptyAdminData = {
   tickets: []
 };
 
+function resolveInitialView() {
+  const pathname = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+  if (pathname === '/admin') return 'admin';
+  if (pathname === '/portal') return 'portal';
+
+  const hashView = window.location.hash.replace('#', '').toLowerCase();
+  if (hashView === 'portal') return 'portal';
+  if (hashView === 'admin') return 'admin';
+
+  if (localStorage.getItem(ADMIN_TOKEN_KEY)) return 'admin';
+  if (localStorage.getItem(TOKEN_KEY)) return 'portal';
+  return 'home';
+}
+
 function isAdminAccount(account) {
   const role = String(account?.role || account?.userRole || '').trim().toLowerCase();
   return role === 'admin';
@@ -169,13 +183,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [loadingPortal, setLoadingPortal] = useState(false);
   const [loadingAdmin, setLoadingAdmin] = useState(false);
-  const [view, setView] = useState(() => {
-    const hashView = window.location.hash.replace('#', '').toLowerCase();
-    if (hashView === 'portal') return 'portal';
-    if (localStorage.getItem(ADMIN_TOKEN_KEY)) return 'admin';
-    if (localStorage.getItem(TOKEN_KEY)) return 'portal';
-    return 'home';
-  });
+  const [view, setView] = useState(() => resolveInitialView());
   const [activeMenu, setActiveMenu] = useState('Dashboard');
   const [activeAdminMenu, setActiveAdminMenu] = useState('Overview');
 
