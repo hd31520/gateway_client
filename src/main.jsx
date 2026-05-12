@@ -153,6 +153,12 @@ function resolveInitialView() {
   return 'home';
 }
 
+function viewPath(viewName) {
+  if (viewName === 'admin') return '/admin';
+  if (viewName === 'portal') return '/portal';
+  return '/';
+}
+
 function isAdminAccount(account) {
   const role = String(account?.role || account?.userRole || '').trim().toLowerCase();
   return role === 'admin';
@@ -203,6 +209,26 @@ function App() {
   useEffect(() => {
     if (adminToken) loadAdmin(adminToken);
   }, [adminToken]);
+
+  useEffect(() => {
+    const onPopState = () => setView(resolveInitialView());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (view !== 'home') navigateView(view, { replace: true });
+  }, []);
+
+  function navigateView(nextView, { replace = false } = {}) {
+    const path = viewPath(nextView);
+    const currentPath = `${window.location.pathname}${window.location.search}`;
+    setView(nextView);
+    if (currentPath !== path || window.location.hash) {
+      const method = replace ? 'replaceState' : 'pushState';
+      window.history[method]({ view: nextView }, '', path);
+    }
+  }
 
   async function api(path, options = {}) {
     const headers = { Accept: 'application/json' };
@@ -269,7 +295,7 @@ function App() {
           brandOpeningFee: account?.brandOpeningFee || emptyAdminData.config.brandOpeningFee
         }
       }));
-      setView('admin');
+      navigateView('admin');
     } else {
       localStorage.setItem(TOKEN_KEY, result.data.token);
       setToken(result.data.token);
@@ -277,7 +303,7 @@ function App() {
       setAdminToken('');
       setAdmin(null);
       setAdminData(emptyAdminData);
-      setView('portal');
+      navigateView('portal');
     }
     setAuthMessage('Welcome in.');
   }
@@ -310,7 +336,7 @@ function App() {
     setAdmin(null);
     setAdminData(emptyAdminData);
     setResponse({ success: true, message: 'Logged out' });
-    if (goHome) setView('home');
+    if (goHome) navigateView('home');
   }
 
   async function logoutAdmin(goHome = true, revokeToken = true) {
@@ -329,7 +355,7 @@ function App() {
     setWebsites([]);
     setPortalData(emptyPortalData);
     setResponse({ success: true, message: 'Logged out' });
-    if (goHome) setView('home');
+    if (goHome) navigateView('home');
   }
 
   async function updateAdminBrand(payload) {
@@ -476,7 +502,7 @@ function App() {
         routeMessage={routeMessage}
         busy={busy}
         loadingPortal={loadingPortal}
-        onHome={() => setView('home')}
+        onHome={() => navigateView('home')}
         onLogout={logout}
         onRefresh={loadClient}
         onAuth={authenticate}
@@ -500,8 +526,8 @@ function App() {
         adminMessage={adminMessage}
         busy={busy}
         loadingAdmin={loadingAdmin}
-        onHome={() => setView('home')}
-        onOpenPortal={() => setView('portal')}
+        onHome={() => navigateView('home')}
+        onOpenPortal={() => navigateView('portal')}
         onLogout={logoutAdmin}
         onRefresh={() => loadAdmin()}
         onAuth={(formData) => authenticate('login', formData)}
@@ -519,8 +545,8 @@ function App() {
     <Landing
       hasClientSession={Boolean(token)}
       hasAdminSession={isAdminSession}
-      onOpenPortal={() => setView('portal')}
-      onOpenAdmin={() => setView(isAdminSession ? 'admin' : 'portal')}
+      onOpenPortal={() => navigateView('portal')}
+      onOpenAdmin={() => navigateView(isAdminSession ? 'admin' : 'portal')}
       onLogout={() => logout(false)}
       onLogoutAdmin={() => logoutAdmin(false)}
     />
@@ -704,7 +730,7 @@ function Portal(props) {
       {token ? (
         <aside className="portal-sidebar">
           <button type="button" className="brand sidebar-brand" onClick={onHome}><span>G</span>GatewayFlow</button>
-          <div className="theme-pill">light</div>
+          <div className="theme-pill">merchant suite</div>
           <nav>
             {sidebarItems.map((item) => <button type="button" key={item} className={activeMenu === item ? 'active' : ''} onClick={() => setActiveMenu(item)}>{item}</button>)}
           </nav>
