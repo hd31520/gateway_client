@@ -20,7 +20,7 @@ const featureCards = [
 const guideSteps = [
   ['01', 'Create an Account and Buy a Plan', 'Open your client portal, add your website, and choose the access window that fits your business.'],
   ['02', 'Add Brand and Wallet Credentials', 'Install the Android app, log in, add bKash or Nagad sender rules, and connect your website API key.'],
-  ['03', 'Enjoy Payment Automation', 'Customers pay, SMS is forwarded, and your merchant checkout verifies transaction ID plus amount.']
+  ['03', 'Enjoy Payment Automation', 'Customers pay in a popup, SMS is forwarded, and your merchant checkout verifies sender number, amount, and time.']
 ];
 
 const pricingPlans = [
@@ -43,18 +43,19 @@ const planOptions = [
 
 const documentationSteps = [
   ['01', 'Account Login', 'Client portal থেকে account login বা registration করুন। Login থাকলে main page এবং dashboard দুই জায়গাতেই logout দেখা যাবে.'],
-  ['02', 'Brand Payment', 'Opening charge gateway bKash/Nagad এ পাঠিয়ে brand form-এ TrxID দিন.'],
-  ['03', 'Auto Approval', 'TrxID এবং gateway SMS TrxID মিললে কোনো manual approval লাগবে না; brand auto active হবে.'],
+  ['02', 'Brand Payment', 'Opening charge gateway bKash/Nagad এ পাঠিয়ে brand form-এ payment reference দিন.'],
+  ['03', 'Auto Approval', 'Gateway SMS reference এবং amount মিললে কোনো manual approval লাগবে না; brand auto active হবে.'],
   ['04', 'Android App', 'Brand active হলে Android app download করুন, client account দিয়ে login করুন, এবং SMS permission allow করুন.'],
-  ['05', 'SMS Sender', 'bKash, Nagad, Rocket বা দরকারি sender rule add করুন। চাইলে contact থেকেও sender pick করা যাবে.'],
-  ['06', 'Payment Verify', 'Customer payment SMS এলে Android app data sync করবে, তারপর dashboard থেকে transaction status দেখা যাবে.']
+  ['05', 'Popup Checkout', 'Customer payment button চাপলে GatewayFlow popup open হবে। Customer sender number দিবে, payment reference দিতে হবে না.'],
+  ['06', 'Payment Verify', 'Android app SMS sync করলে sender number, exact amount, এবং payment time মিলিয়ে transaction auto verify হবে.']
 ];
 
 const documentationNotes = [
   'Android app home screen-এ server/API link দেখানো হয় না.',
   'Logout করলে app local session clear করে এবং server session revoke করার চেষ্টা করে.',
   'Website credential matched gateway payment SMS পেলে unlock হয়.',
-  'Payment verify করতে transaction ID এবং amount মিলতে হবে.'
+  'Customer payment verify করতে payment reference লাগে না; sender number, amount এবং payment time মিলতে হবে.',
+  'Gateway SMS অথবা অন্য merchant account-এর SMS দিয়ে customer payment approve হবে না.'
 ];
 
 const sidebarItems = [
@@ -456,18 +457,18 @@ function App() {
     return true;
   }
 
-  async function renewWebsite(site, transactionId, siteCount = 1, months = 1) {
+  async function renewWebsite(site, payerNumber, siteCount = 1, months = 1) {
     const sc = Number(siteCount || 1) || 1;
     const duration = Number(months || 1) || 1;
     const amount = siteCount ? computePlanTotalAmount(sc, duration) : Number(site.brandCharge || site.monthlyFee || portalData.adminPayment.brandOpeningFee || 60);
     const result = await api('/client/me?resource=billing', {
       method: 'POST',
       auth: true,
-      body: { websiteId: site.id, transaction_id: transactionId, amount, months: duration, siteCount: sc }
+      body: { websiteId: site.id, payer_number: payerNumber, payment_time: new Date().toISOString(), amount, months: duration, siteCount: sc }
     });
     if (!result.ok) return errorMessage(result.data, 'Renew failed');
     await loadClient();
-    return result.data.message || `Payment TrxID saved for Tk ${amount}. Access will update for ${duration} month${duration > 1 ? 's' : ''} when gateway SMS matches.`;
+    return result.data.message || `Payment reference saved for Tk ${amount}. Access will update for ${duration} month${duration > 1 ? 's' : ''} when gateway SMS matches.`;
   }
 
   async function verifyPayment(payload) {
@@ -482,8 +483,9 @@ function App() {
       apiKey: site.apiKey,
       body: {
         domain: site.domain,
-        transaction_id: payload.transactionId,
         amount: Number(payload.amount),
+        payer_number: payload.payerNumber,
+        payment_time: payload.paymentTime,
         order_id: payload.orderId,
         seller_name: payload.sellerName,
         buyer_name: payload.buyerName,
@@ -695,7 +697,7 @@ function Landing({ hasClientSession, hasAdminSession, onOpenPortal, onOpenAdmin,
         </div>
         <div className="layout-preview">
           <div><span>Checkout</span><strong>Tk 1,400.00</strong><small>bKash, Nagad, Rocket</small></div>
-          <div><span>Verification</span><strong>Real-time Sync</strong><small>Transaction ID + amount</small></div>
+          <div><span>Verification</span><strong>Real-time Sync</strong><small>Sender number + amount + time</small></div>
         </div>
       </section>
 
@@ -907,7 +909,7 @@ function AdminOverview({ data, onUpdateBrand, onUpdatePayment, onUpdateMerchantV
       <section className="mini-stat-grid">
         <MiniStat label="Active Brands" value={data.summary.activeBrands} sub="Approved and unlocked" />
         <MiniStat label="Pending Billing" value={data.summary.pendingBilling} sub="Waiting for review" />
-        <MiniStat label="Pending Merchant" value={data.summary.pendingMerchantVerifications} sub="Waiting for matching SMS TrxID" />
+        <MiniStat label="Pending Merchant" value={data.summary.pendingMerchantVerifications} sub="Waiting for sender, amount, and time match" />
         <MiniStat label="Gateway Account" value={formatMoney(data.summary.adminIncomeAmount)} sub={`${data.summary.adminIncomeCount} gateway SMS records`} />
       </section>
       <section className="portal-grid-two align-start">
@@ -996,13 +998,13 @@ function AdminMerchantVerificationPanel({ data, onUpdateMerchantVerification }) 
   const [status, setStatus] = useState('');
   const items = data.merchantVerifications.filter((item) => {
     const statusOk = status ? item.status === status : true;
-    return statusOk && searchMatches(item, ['transaction_id', 'domain', 'clientEmail', 'clientName', 'order_id', 'status', 'adminNote'], query);
+    return statusOk && searchMatches(item, ['payerNumber', 'transaction_id', 'domain', 'clientEmail', 'clientName', 'order_id', 'status', 'adminNote'], query);
   });
   return (
     <section className="panel">
       <div className="section-title"><div><p className="eyebrow">Merchant Verify</p><h2>Payment verification history</h2></div><span className="pill">{items.length} records</span></div>
       <div className="admin-filters">
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search TrxID, domain, client, order..." />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search sender number, domain, client, order..." />
         <select value={status} onChange={(event) => setStatus(event.target.value)}>
           <option value="">All statuses</option>
           <option value="pending_sms">Pending SMS</option>
@@ -1019,12 +1021,12 @@ function AdminMerchantVerificationPanel({ data, onUpdateMerchantVerification }) 
 
 function AdminPaymentsPanel({ data, onUpdatePayment }) {
   const [query, setQuery] = useState('');
-  const items = data.payments.filter((payment) => searchMatches(payment, ['transaction_id', 'provider', 'sender', 'sourceNumber', 'rawMessage', 'status'], query));
+  const items = data.payments.filter((payment) => searchMatches(payment, ['payerNumber', 'transaction_id', 'provider', 'sender', 'sourceNumber', 'rawMessage', 'status'], query));
   return (
     <section className="panel">
       <div className="section-title"><div><p className="eyebrow">Payments</p><h2>Android SMS records</h2></div><span className="pill">{items.length} records</span></div>
       <div className="admin-filters single">
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search transaction, sender, raw SMS..." />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search sender number, provider, raw SMS..." />
       </div>
       <AdminPaymentsTable items={items} onUpdatePayment={onUpdatePayment} />
     </section>
@@ -1033,7 +1035,7 @@ function AdminPaymentsPanel({ data, onUpdatePayment }) {
 
 function AdminHistoryPanel({ data }) {
   const [query, setQuery] = useState('');
-  const items = data.accountHistory.filter((item) => searchMatches(item, ['transaction_id', 'type', 'domain', 'brandName', 'clientEmail', 'provider', 'sender', 'status'], query));
+  const items = data.accountHistory.filter((item) => searchMatches(item, ['payerNumber', 'transaction_id', 'type', 'domain', 'brandName', 'clientEmail', 'provider', 'sender', 'status'], query));
   return (
     <section className="panel">
       <div className="section-title"><div><p className="eyebrow">Account History</p><h2>Gateway payment ledger</h2></div><span className="pill">{formatMoney(data.summary.adminIncomeAmount)}</span></div>
@@ -1043,7 +1045,7 @@ function AdminHistoryPanel({ data }) {
         <MiniStat label="Unused Amount" value={formatMoney(data.summary.unusedAdminAmount)} sub="Available for matching" />
       </section>
       <div className="admin-filters single">
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search TrxID, brand, client, provider..." />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search sender, brand, client, provider..." />
       </div>
       <AdminHistoryTable items={items} />
     </section>
@@ -1137,7 +1139,7 @@ function AdminBillingTable({ items = [], onUpdateBrand, compact = false }) {
   return (
     <div className="table-wrap">
       <table className="admin-table">
-        <thead><tr><th>Brand</th><th>Client</th><th>TrxID</th>{compact ? null : <th>Note</th>}<th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Brand</th><th>Client</th><th>Reference</th>{compact ? null : <th>Note</th>}<th>Status</th><th>Actions</th></tr></thead>
         <tbody>{items.map((request) => (
           <tr key={request.id}>
             <td><strong>{request.domain || request.websiteId}</strong><small>{request.months || 1} month{Number(request.months || 1) > 1 ? 's' : ''} · {request.siteCount || 1} website plan</small></td>
@@ -1164,13 +1166,13 @@ function AdminMerchantVerificationTable({ items = [], onUpdateMerchantVerificati
   return (
     <div className="table-wrap">
       <table className="admin-table">
-        <thead><tr><th>Created</th><th>Brand</th><th>Client</th><th>TrxID</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Created</th><th>Brand</th><th>Client</th><th>Sender</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>{items.map((item) => (
           <tr key={item.id || item.transaction_id}>
             <td>{formatDate(item.createdAt || item.verifiedAt)}</td>
             <td><strong>{item.domain || '-'}</strong><small>{item.order_id || 'No order ID'}</small></td>
             <td>{item.clientEmail || '-'}<small>{item.clientName || ''}</small></td>
-            <td><strong>{item.transaction_id}</strong><small>{item.sellerName || item.buyerName || '-'}</small></td>
+            <td><strong>{item.payerNumber || '-'}</strong><small>{item.sellerName || item.buyerName || item.order_id || 'sender + time match'}</small></td>
             <td>{formatMoney(item.amount)}</td>
             <td><span className={`badge ${statusBadgeClass(item.status)}`}>{formatBrandStatus(item.status)}</span><small>{item.adminNote || item.source || ''}</small></td>
             <td>
@@ -1191,12 +1193,12 @@ function AdminPaymentsTable({ items = [], onUpdatePayment }) {
   return (
     <div className="table-wrap">
       <table className="admin-table">
-        <thead><tr><th>Received</th><th>Provider</th><th>TrxID</th><th>Amount</th><th>Status</th><th>Raw SMS</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Received</th><th>Provider</th><th>Sender</th><th>Amount</th><th>Status</th><th>Raw SMS</th><th>Actions</th></tr></thead>
         <tbody>{items.map((payment) => (
           <tr key={payment.id || payment._id || payment.transaction_id}>
             <td>{formatDate(payment.receivedAt || payment.createdAt)}</td>
             <td>{payment.provider || payment.sender}<small>{payment.sourceNumber || payment.source_number || ''}</small></td>
-            <td><strong>{payment.transaction_id}</strong><small>{payment.usedFor || 'unused'}</small></td>
+            <td><strong>{payment.payerNumber || '-'}</strong><small>{payment.usedFor || formatPaymentReference(payment.transaction_id)}</small></td>
             <td>{formatMoney(payment.amount)}</td>
             <td><span className={`badge ${statusBadgeClass(payment.status)}`}>{payment.status || 'received'}</span></td>
             <td className="admin-message-cell">{payment.rawMessage || payment.raw_message || '-'}</td>
@@ -1218,13 +1220,13 @@ function AdminHistoryTable({ items = [] }) {
   return (
     <div className="table-wrap">
       <table className="admin-table">
-        <thead><tr><th>Received</th><th>Type</th><th>Brand</th><th>TrxID</th><th>Amount</th><th>Status</th></tr></thead>
+        <thead><tr><th>Received</th><th>Type</th><th>Brand</th><th>Sender / Reference</th><th>Amount</th><th>Status</th></tr></thead>
         <tbody>{items.map((item) => (
           <tr key={item.id || item.transaction_id}>
             <td>{formatDate(item.receivedAt || item.createdAt)}</td>
             <td><strong>{item.type}</strong><small>{item.provider || item.sender || 'gateway wallet'}</small></td>
             <td>{item.domain || '-'}<small>{item.clientEmail || item.brandName || ''}</small></td>
-            <td><strong>{item.transaction_id}</strong><small>{item.usedFor || 'unused'}</small></td>
+            <td><strong>{item.payerNumber || formatPaymentReference(item.transaction_id)}</strong><small>{item.usedFor || 'unused'}</small></td>
             <td>{formatMoney(item.amount)}</td>
             <td><span className={`badge ${statusBadgeClass(item.status)}`}>{item.status || 'received'}</span></td>
           </tr>
@@ -1325,7 +1327,7 @@ function SummaryCards({ portalData, websites, stats }) {
 function AddFundsPanel({ portalData, websites, onRenewWebsite }) {
   return (
     <section className="portal-grid-two align-start">
-      <InfoPanel title="Add Funds" eyebrow="Brand Charge" text="Send the exact opening charge to the gateway wallet and submit the TrxID. If the gateway SMS record matches, the brand activates automatically without manual approval." items={[`Brand opening fee: ${formatMoney(portalData.adminPayment.brandOpeningFee || portalData.summary.brandOpeningFee)}`, `bKash: ${portalData.adminPayment.bkashNumber}`, `Nagad: ${portalData.adminPayment.nagadNumber}`, `Unpaid invoices: ${portalData.summary.unpaidInvoices}`]} />
+      <InfoPanel title="Add Funds" eyebrow="Brand Charge" text="Send the exact opening charge to the gateway wallet and submit the gateway payment reference. If the gateway SMS record matches, the brand activates automatically without manual approval." items={[`Brand opening fee: ${formatMoney(portalData.adminPayment.brandOpeningFee || portalData.summary.brandOpeningFee)}`, `bKash: ${portalData.adminPayment.bkashNumber}`, `Nagad: ${portalData.adminPayment.nagadNumber}`, `Unpaid invoices: ${portalData.summary.unpaidInvoices}`]} />
       <section className="panel">
         <div className="section-title"><div><p className="eyebrow">Invoices</p><h2>Amounts waiting for payment</h2></div></div>
         <InvoiceTable items={portalData.invoices} />
@@ -1358,12 +1360,12 @@ function BillingQuickSubmit({ websites = [], onSubmit }) {
 
   return (
     <form className="billing-submit-card" onSubmit={submit}>
-      <h3>Submit payment TrxID</h3>
+      <h3>Submit payment reference</h3>
       <select value={form.websiteId} onChange={(event) => setForm({ ...form, websiteId: event.target.value })} required>{websites.length ? websites.map((site) => <option key={site.id} value={site.id}>{site.name || site.domain}</option>) : <option value="">Open a brand first</option>}</select>
       <select value={form.plan} onChange={(event) => setForm({ ...form, plan: event.target.value })} required>
         {planOptions.map((option) => <option key={planOptionValue(option)} value={planOptionValue(option)}>{planOptionLabel(option)}</option>)}
       </select>
-      <input value={form.transactionId} placeholder="Gateway payment transaction ID" onChange={(event) => setForm({ ...form, transactionId: event.target.value })} required />
+      <input value={form.transactionId} placeholder="Gateway payment reference" onChange={(event) => setForm({ ...form, transactionId: event.target.value })} required />
       <button type="submit">Send For Approval</button>
       <Message text={message} />
     </form>
@@ -1377,7 +1379,7 @@ function BillingRequestList({ items = [] }) {
       {!items.length ? <div className="empty-state compact-empty">No billing request submitted yet.</div> : items.map((item) => (
         <div className="route-card compact" key={item.id}>
           <strong>{item.domain || item.websiteId}</strong>
-          <span>{item.transaction_id} · {formatMoney(item.amount)} · {item.status}</span>
+          <span>{formatPaymentReference(item.transaction_id)} · {formatMoney(item.amount)} · {item.status}</span>
         </div>
       ))}
     </div>
@@ -1388,7 +1390,7 @@ function PaymentLinkPanel({ websites, checkoutMessage, onVerifyPayment, portalDa
   return (
     <section className="portal-grid-two align-start">
       <CheckoutForm websites={websites} onSubmit={onVerifyPayment} message={checkoutMessage} />
-      <InfoPanel title="Live checkout rules" eyebrow="Payment Link" text="Use a website API key to verify customer payments after the Android app receives the SMS." items={[`${websites.length} websites available`, `${portalData.summary.completedTransactions} successful verifications`, `${portalData.summary.pendingMerchantVerifications} merchant verifications waiting`]} />
+      <InfoPanel title="Live checkout rules" eyebrow="Payment Link" text="Payment opens in a GatewayFlow popup. No customer payment reference is required; verification uses sender number, exact amount, and SMS receive time." items={[`${websites.length} websites available`, `${portalData.summary.completedTransactions} successful verifications`, `${portalData.summary.pendingMerchantVerifications} merchant verifications waiting`]} />
     </section>
   );
 }
@@ -1486,7 +1488,7 @@ function AndroidPanel({ client, response, portalData }) {
   return (
     <section className="portal-grid-two align-start">
       <AndroidCard client={client} response={response} devices={portalData.devices} websites={portalData.websites} />
-      <InfoPanel title="Android setup" eyebrow="SMS System" text="Android download unlocks after a brand is active. Auto activation happens when gateway payment TrxID and amount match the gateway SMS history, with no manual approval needed." items={['Brand must be active before app download', 'Login only, no Android registration', 'Each SMS includes transaction ID, amount, provider, raw message, and device ID']} />
+      <InfoPanel title="Android setup" eyebrow="SMS System" text="Android download unlocks after a brand is active. Customer payment verification uses sender number, amount, and SMS receive time." items={['Brand must be active before app download', 'Login only, no Android registration', 'Each SMS includes sender number, amount, provider, raw message, and receive time']} />
     </section>
   );
 }
@@ -1497,12 +1499,12 @@ function HomePagePanel({ portalData }) {
 
 function SmsListPanel({ portalData }) {
   const [query, setQuery] = useState('');
-  const items = portalData.payments.filter((payment) => searchMatches(payment, ['transaction_id', 'provider', 'sender', 'sourceNumber', 'rawMessage', 'status'], query));
+  const items = portalData.payments.filter((payment) => searchMatches(payment, ['payerNumber', 'transaction_id', 'provider', 'sender', 'sourceNumber', 'rawMessage', 'status'], query));
   return (
     <section className="panel">
       <div className="section-title"><div><p className="eyebrow">SMS List</p><h2>Android SMS records</h2></div><span className="pill">{items.length} records</span></div>
       <div className="admin-filters single">
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search transaction, sender, raw SMS..." />
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search sender number, provider, raw SMS..." />
       </div>
       <PaymentDataTable items={items} />
     </section>
@@ -1513,7 +1515,7 @@ function DeveloperDocsPanel({ websites, docs }) {
   return (
     <section className="portal-grid-two align-start">
       <DocsList docs={docs} />
-      <section className="panel"><p className="eyebrow">API Keys</p><h2>Website credentials</h2><ApiKeyList websites={websites} /></section>
+      <section className="panel"><p className="eyebrow">API Keys</p><h2>Website credentials</h2><p>Use these keys from your server or checkout popup integration. Customer payment verification sends payer number, amount, order ID, and payment time.</p><ApiKeyList websites={websites} /></section>
     </section>
   );
 }
@@ -1528,34 +1530,41 @@ function OurSupportPanel({ settings, tickets, onCreateTicket }) {
 }
 
 function WebsiteForm({ onSubmit, message, adminPayment = emptyPortalData.adminPayment }) {
-  const [form, setForm] = useState({ name: '', domain: '', walletProvider: 'bkash', walletNumber: '', receiverName: '', transaction_id: '' });
+  const [form, setForm] = useState({ name: '', domain: '', walletProvider: 'bkash', walletNumber: '', receiverName: '', payer_number: '' });
   function update(field, value) { setForm((current) => ({ ...current, [field]: value })); }
   async function submit(event) {
     event.preventDefault();
-    const ok = await onSubmit(form);
-    if (ok) setForm({ name: '', domain: '', walletProvider: 'bkash', walletNumber: '', receiverName: '', transaction_id: '' });
+    const ok = await onSubmit({ ...form, payment_time: new Date().toISOString() });
+    if (ok) setForm({ name: '', domain: '', walletProvider: 'bkash', walletNumber: '', receiverName: '', payer_number: '' });
   }
   return (
     <form className="panel form-card" onSubmit={submit}>
       <p className="eyebrow">Brands</p><h2>Open Brand</h2>
-      <div className="route-card compact">Opening charge {formatMoney(adminPayment.brandOpeningFee)}. Pay gateway bKash {adminPayment.bkashNumber} or Nagad {adminPayment.nagadNumber}, then enter the TrxID for instant SMS matching.</div>
+      <div className="route-card compact">Opening charge {formatMoney(adminPayment.brandOpeningFee)}. Pay gateway bKash {adminPayment.bkashNumber} or Nagad {adminPayment.nagadNumber}, then enter the sender number used for payment.</div>
       <label htmlFor="websiteName">Brand name</label><input id="websiteName" value={form.name} placeholder="My Shop" onChange={(event) => update('name', event.target.value)} required />
       <label htmlFor="websiteDomain">Domain</label><input id="websiteDomain" value={form.domain} placeholder="example.com" onChange={(event) => update('domain', event.target.value)} required />
       <label htmlFor="walletProvider">Where will this brand receive money?</label><select id="walletProvider" value={form.walletProvider} onChange={(event) => update('walletProvider', event.target.value)} required><option value="bkash">bKash</option><option value="nagad">Nagad</option><option value="rocket">Rocket</option><option value="upay">Upay</option><option value="bank">Bank</option><option value="other">Other</option></select>
       <label htmlFor="walletNumber">Receiver number</label><input id="walletNumber" value={form.walletNumber} placeholder="017XXXXXXXX" onChange={(event) => update('walletNumber', event.target.value)} required />
       <label htmlFor="receiverName">Receiver account name</label><input id="receiverName" value={form.receiverName} placeholder="Shop owner or brand wallet name" onChange={(event) => update('receiverName', event.target.value)} />
-      <label htmlFor="adminTransactionId">Gateway payment TrxID</label><input id="adminTransactionId" value={form.transaction_id} placeholder="Payment transaction ID" onChange={(event) => update('transaction_id', event.target.value)} required />
+      <label htmlFor="adminPayerNumber">Sender number used for payment</label><input id="adminPayerNumber" value={form.payer_number} inputMode="tel" placeholder="01XXXXXXXXX" onChange={(event) => update('payer_number', event.target.value.replace(/\D/g, ''))} required />
       <button type="submit">Open Brand</button><Message text={message} />
     </form>
   );
 }
 
 function CheckoutForm({ websites, onSubmit, message }) {
-  const [form, setForm] = useState({ websiteId: '', orderId: `ORDER-${Date.now().toString().slice(-6)}`, amount: '500', transactionId: '', sellerName: '', buyerName: '', buyerAddress: '', returnUrl: '' });
+  const [form, setForm] = useState({ websiteId: '', orderId: `ORDER-${Date.now().toString().slice(-6)}`, amount: '500', payerNumber: '', sellerName: '', buyerName: '', buyerAddress: '', returnUrl: '' });
+  const [popupOpen, setPopupOpen] = useState(false);
   useEffect(() => { if (!form.websiteId && websites[0]?.id) setForm((current) => ({ ...current, websiteId: websites[0].id })); }, [websites, form.websiteId]);
   function update(field, value) { setForm((current) => ({ ...current, [field]: value })); }
+  const selectedWebsite = websites.find((site) => site.id === form.websiteId);
+  const cleanPayerNumber = form.payerNumber.replace(/\D/g, '');
+  async function submitPopup(event) {
+    event.preventDefault();
+    await onSubmit({ ...form, payerNumber: cleanPayerNumber, paymentTime: new Date().toISOString() });
+  }
   return (
-    <form className="panel form-card checkout-card" onSubmit={(event) => { event.preventDefault(); onSubmit(form); }}>
+    <form className="panel form-card checkout-card" onSubmit={(event) => { event.preventDefault(); setPopupOpen(true); }}>
       <p className="eyebrow">Payment Link</p><h2>Demo Payment</h2>
       <label htmlFor="checkoutWebsite">Website</label><select id="checkoutWebsite" value={form.websiteId} onChange={(event) => update('websiteId', event.target.value)} required>{websites.length ? websites.map((site) => <option key={site.id} value={site.id}>{site.domain} ({site.subscriptionStatus})</option>) : <option value="">Add a website first</option>}</select>
       <label htmlFor="orderId">Order ID</label><input id="orderId" value={form.orderId} onChange={(event) => update('orderId', event.target.value)} required />
@@ -1563,9 +1572,30 @@ function CheckoutForm({ websites, onSubmit, message }) {
       <label htmlFor="buyerName">Buyer name</label><input id="buyerName" value={form.buyerName} onChange={(event) => update('buyerName', event.target.value)} placeholder="Customer name" />
       <label htmlFor="buyerAddress">Buyer address</label><input id="buyerAddress" value={form.buyerAddress} onChange={(event) => update('buyerAddress', event.target.value)} placeholder="Customer address" />
       <label htmlFor="amount">Amount</label><input id="amount" type="number" min="1" step="0.01" value={form.amount} onChange={(event) => update('amount', event.target.value)} required />
-      <label htmlFor="transactionId">Transaction ID</label><input id="transactionId" value={form.transactionId} placeholder="Customer TrxID" onChange={(event) => update('transactionId', event.target.value)} required />
       <label htmlFor="returnUrl">Return URL</label><input id="returnUrl" value={form.returnUrl} placeholder="https://shop.com/order-return" onChange={(event) => update('returnUrl', event.target.value)} />
-      <button type="submit">Verify Payment</button><Message text={message} />
+      <button type="submit">Open Payment Popup</button><Message text={message} />
+      {popupOpen ? (
+        <div className="checkout-popup-backdrop" role="dialog" aria-modal="true" aria-labelledby="checkoutPopupTitle">
+          <div className="checkout-popup">
+            <button type="button" className="checkout-popup-close" onClick={() => setPopupOpen(false)} aria-label="Close payment popup">x</button>
+            <p className="eyebrow">Secured by GatewayFlow</p>
+            <h2 id="checkoutPopupTitle">Complete Payment</h2>
+            <div className="checkout-popup-summary">
+              <span>{selectedWebsite?.domain || 'Merchant website'}</span>
+              <strong>{formatMoney(form.amount)}</strong>
+              <small>Send the exact amount, then enter the sender number used in bKash/Nagad.</small>
+            </div>
+            <div className="checkout-wallet-box">
+              <span>Merchant wallet</span>
+              <strong>{selectedWebsite?.walletProvider || 'wallet'} {selectedWebsite?.walletNumber || 'not configured'}</strong>
+            </div>
+            <label htmlFor="payerNumber">Sender number</label>
+            <input id="payerNumber" value={form.payerNumber} inputMode="tel" maxLength={14} placeholder="01XXXXXXXXX" onChange={(event) => update('payerNumber', event.target.value.replace(/\D/g, ''))} required />
+            <button type="button" disabled={cleanPayerNumber.length < 10} onClick={submitPopup}>Confirm Payment</button>
+            <small className="checkout-popup-note">No payment reference is needed. GatewayFlow checks the sender number, exact amount, and SMS receive time.</small>
+          </div>
+        </div>
+      ) : null}
     </form>
   );
 }
@@ -1578,7 +1608,7 @@ function WebsiteList({ websites, onRenew }) {
 }
 
 function WebsiteCard({ site, onRenew }) {
-  const [transactionId, setTransactionId] = useState('');
+  const [payerNumber, setPayerNumber] = useState('');
   const [plan, setPlan] = useState('1:1');
   const [message, setMessage] = useState('');
   const appDownloadUrl = absoluteDownloadUrl(site.appDownloadUrl);
@@ -1589,9 +1619,9 @@ function WebsiteCard({ site, onRenew }) {
     const selectedPlan = parsePlanOption(plan);
     const amount = computePlanTotalAmount(selectedPlan.siteCount, selectedPlan.months);
     setMessage(`Checking ${formatMoney(amount)} gateway payment...`);
-    const resultMessage = await onRenew(site, transactionId.trim(), selectedPlan.siteCount, selectedPlan.months);
+    const resultMessage = await onRenew(site, payerNumber.trim(), selectedPlan.siteCount, selectedPlan.months);
     setMessage(resultMessage);
-    if (/activated|applied|renewed|ready/i.test(resultMessage)) setTransactionId('');
+    if (/activated|applied|renewed|ready/i.test(resultMessage)) setPayerNumber('');
   }
   return (
     <article className="website-card">
@@ -1601,7 +1631,7 @@ function WebsiteCard({ site, onRenew }) {
         <div><span>Charge</span><strong>{formatMoney(site.brandCharge || site.monthlyFee)}</strong></div>
         <div><span>Payment</span><strong>{site.paymentStatus || 'unpaid'}</strong></div>
       </div>
-      {unlocked ? <div className="api-key-line"><code>{site.apiKey}</code><button type="button" className="ghost-button small" onClick={() => copyText(site.apiKey)}>Copy</button></div> : <div className="empty-state compact-empty">API key unlocks automatically when gateway SMS TrxID and amount match.</div>}
+      {unlocked ? <div className="api-key-line"><code>{site.apiKey}</code><button type="button" className="ghost-button small" onClick={() => copyText(site.apiKey)}>Copy</button></div> : <div className="empty-state compact-empty">API key unlocks automatically when gateway SMS reference and amount match.</div>}
       <div className="website-meta"><span>Paid until</span><strong>{site.paidUntil ? formatDate(site.paidUntil) : 'Not active'}</strong></div>
       {appDownloadUrl && unlocked ? <a className="ghost-button download-link" href={appDownloadUrl} download>Download Android App</a> : null}
       {site.adminNote ? <p className="message">{site.adminNote}</p> : null}
@@ -1609,7 +1639,7 @@ function WebsiteCard({ site, onRenew }) {
         <select value={plan} onChange={(event) => setPlan(event.target.value)} required>
           {planOptions.map((option) => <option key={planOptionValue(option)} value={planOptionValue(option)}>{planOptionLabel(option)}</option>)}
         </select>
-        <input value={transactionId} onChange={(event) => setTransactionId(event.target.value)} placeholder={`${formatMoney(computePlanTotalAmount(parsePlanOption(plan).siteCount, parsePlanOption(plan).months))} gateway payment TrxID`} required />
+        <input value={payerNumber} onChange={(event) => setPayerNumber(event.target.value.replace(/\D/g, ''))} placeholder={`Sender number for ${formatMoney(computePlanTotalAmount(parsePlanOption(plan).siteCount, parsePlanOption(plan).months))}`} required />
         <button type="submit">{actionLabel}</button>
         <Message text={message} />
       </form>
@@ -1622,18 +1652,18 @@ function AndroidCard({ client, response, devices = [], websites = [] }) {
   const unlockedBrand = websites.find((site) => site.androidAppEnabled || site.brandStatus === 'active');
   const downloadUrl = absoluteDownloadUrl(unlockedBrand?.appDownloadUrl);
   return (
-    <section className="panel android-card"><p className="eyebrow">Android App</p><h2>SMS forwarding device</h2><p>{unlockedBrand ? `Brand ${unlockedBrand.name || unlockedBrand.domain} is active. Download the app and login with your merchant account.` : 'Open a brand first. Android app download unlocks after gateway SMS payment matching.'}</p>{downloadUrl ? <a className="ghost-button download-link" href={downloadUrl} download>Download Android App</a> : <div className="empty-state compact-empty">No active brand yet. Submit the gateway payment TrxID for SMS matching.</div>}<div className="device-preview"><span className="notch" /><strong>{lastDevice?.name || client?.email || 'merchant@example.com'}</strong><small>{lastDevice ? `Last seen ${formatDate(lastDevice.lastSeenAt)}` : 'Waiting for device login'}</small></div><pre>{JSON.stringify(response, null, 2)}</pre></section>
+    <section className="panel android-card"><p className="eyebrow">Android App</p><h2>SMS forwarding device</h2><p>{unlockedBrand ? `Brand ${unlockedBrand.name || unlockedBrand.domain} is active. Download the app and login with your merchant account.` : 'Open a brand first. Android app download unlocks after gateway SMS payment matching.'}</p>{downloadUrl ? <a className="ghost-button download-link" href={downloadUrl} download>Download Android App</a> : <div className="empty-state compact-empty">No active brand yet. Submit the gateway payment reference for SMS matching.</div>}<div className="device-preview"><span className="notch" /><strong>{lastDevice?.name || client?.email || 'merchant@example.com'}</strong><small>{lastDevice ? `Last seen ${formatDate(lastDevice.lastSeenAt)}` : 'Waiting for device login'}</small></div><pre>{JSON.stringify(response, null, 2)}</pre></section>
   );
 }
 
 function TransactionTable({ items = [] }) {
-  if (!items.length) return <div className="empty-state">No merchant payment history yet. Verify a payment from Payment Link; it will auto-approve when the SMS TrxID matches.</div>;
-  return <div className="table-wrap"><table><thead><tr><th>#</th><th>Domain</th><th>TrxID</th><th>Order</th><th>Amount</th><th>Status</th></tr></thead><tbody>{items.map((item, index) => <tr key={item.id || item.transaction_id}><td>{index + 1}</td><td>{item.domain || '-'}</td><td><strong>{item.transaction_id}</strong><small>{item.buyerName || item.sellerName || ''}</small></td><td>{item.order_id || '-'}</td><td>{formatMoney(item.amount)}</td><td><span className={`status-chip ${transactionStatusClass(item.status)}`}>{formatBrandStatus(item.status || 'verified')}</span><small>{item.adminNote || ''}</small></td></tr>)}</tbody></table></div>;
+  if (!items.length) return <div className="empty-state">No merchant payment history yet. Verify a payment from Payment Link; it will auto-approve when sender number, amount, and time match.</div>;
+  return <div className="table-wrap"><table><thead><tr><th>#</th><th>Domain</th><th>Sender</th><th>Order</th><th>Amount</th><th>Status</th></tr></thead><tbody>{items.map((item, index) => <tr key={item.id || item.transaction_id}><td>{index + 1}</td><td>{item.domain || '-'}</td><td><strong>{item.payerNumber || '-'}</strong><small>{item.buyerName || item.sellerName || formatPaymentReference(item.transaction_id) || ''}</small></td><td>{item.order_id || '-'}</td><td>{formatMoney(item.amount)}</td><td><span className={`status-chip ${transactionStatusClass(item.status)}`}>{formatBrandStatus(item.status || 'verified')}</span><small>{item.adminNote || ''}</small></td></tr>)}</tbody></table></div>;
 }
 
 function PaymentDataTable({ items = [] }) {
   if (!items.length) return <div className="empty-state">No Android SMS data yet. Login in the Android app and scan inbox.</div>;
-  return <div className="table-wrap"><table><thead><tr><th>#</th><th>Provider</th><th>TrxID</th><th>Amount</th><th>Status</th><th>Received</th></tr></thead><tbody>{items.map((item, index) => <tr key={item.id || item.transaction_id}><td>{index + 1}</td><td>{item.provider || item.sender}</td><td><strong>{item.transaction_id}</strong></td><td>{formatMoney(item.amount)}</td><td><span className={`status-chip ${item.status === 'verified' ? 'success' : 'pending'}`}>{item.status}</span></td><td>{formatDate(item.receivedAt || item.createdAt)}</td></tr>)}</tbody></table></div>;
+  return <div className="table-wrap"><table><thead><tr><th>#</th><th>Provider</th><th>Sender</th><th>Amount</th><th>Status</th><th>Received</th></tr></thead><tbody>{items.map((item, index) => <tr key={item.id || item.transaction_id}><td>{index + 1}</td><td>{item.provider || item.sender}</td><td><strong>{item.payerNumber || '-'}</strong><small>{formatPaymentReference(item.transaction_id)}</small></td><td>{formatMoney(item.amount)}</td><td><span className={`status-chip ${item.status === 'verified' ? 'success' : 'pending'}`}>{item.status}</span></td><td>{formatDate(item.receivedAt || item.createdAt)}</td></tr>)}</tbody></table></div>;
 }
 
 function InvoiceTable({ items = [] }) {
@@ -1691,16 +1721,16 @@ function PlansGrid({ plans = [] }) {
 }
 
 function RenewalList({ renewals = [] }) {
-  return <section className="panel"><div className="section-title"><div><p className="eyebrow">Renewals</p><h2>Subscription history</h2></div><span className="pill">{renewals.length} records</span></div>{!renewals.length ? <div className="empty-state">No renewals yet.</div> : <div className="table-wrap"><table><thead><tr><th>TrxID</th><th>Amount</th><th>Paid</th><th>Valid Until</th></tr></thead><tbody>{renewals.map((item) => <tr key={item.id}><td><strong>{item.transaction_id}</strong></td><td>{formatMoney(item.amount)}</td><td>{formatDate(item.paidAt)}</td><td>{formatDate(item.paidUntil)}</td></tr>)}</tbody></table></div>}</section>;
+  return <section className="panel"><div className="section-title"><div><p className="eyebrow">Renewals</p><h2>Subscription history</h2></div><span className="pill">{renewals.length} records</span></div>{!renewals.length ? <div className="empty-state">No renewals yet.</div> : <div className="table-wrap"><table><thead><tr><th>Reference</th><th>Amount</th><th>Paid</th><th>Valid Until</th></tr></thead><tbody>{renewals.map((item) => <tr key={item.id}><td><strong>{formatPaymentReference(item.transaction_id)}</strong></td><td>{formatMoney(item.amount)}</td><td>{formatDate(item.paidAt)}</td><td>{formatDate(item.paidUntil)}</td></tr>)}</tbody></table></div>}</section>;
 }
 
 function DocsList({ docs = [] }) {
-  return <section className="panel"><div className="section-title"><div><p className="eyebrow">Developer Docs</p><h2>Integration checklist</h2></div><span className="pill">{docs.length} items</span></div><div className="card-list">{docs.map((doc) => <article className="route-card" key={doc.title}><h3>{doc.title}</h3><p><strong>{doc.method}</strong> secure server route</p><small>{doc.auth}</small><code>{doc.body.join(', ') || 'No body'}</code></article>)}</div></section>;
+  return <section className="panel"><div className="section-title"><div><p className="eyebrow">Developer Docs</p><h2>Integration checklist</h2></div><span className="pill">{docs.length} items</span></div><div className="card-list">{docs.map((doc) => <article className="route-card" key={doc.title}><h3>{doc.title}</h3><p><strong>{doc.method}</strong> secure server route</p><small>{doc.auth}</small><code>{doc.body.join(', ') || 'No body'}</code>{doc.path === '/api/merchant/verify' ? <small>No customer payment reference needed. Match payer_number + amount + payment_time.</small> : null}</article>)}</div></section>;
 }
 
 function ApiKeyList({ websites = [] }) {
   const activeWebsites = websites.filter((site) => site.androidAppEnabled || site.brandStatus === 'active');
-  if (!activeWebsites.length) return <div className="empty-state">Open a brand with a matching gateway payment TrxID to unlock API keys.</div>;
+  if (!activeWebsites.length) return <div className="empty-state">Open a brand with a matching gateway payment reference to unlock API keys.</div>;
   return <div className="website-list">{activeWebsites.map((site) => <div className="api-key-line" key={site.id}><code>{site.apiKey}</code><button type="button" className="ghost-button small" onClick={() => copyText(site.apiKey)}>Copy</button></div>)}</div>;
 }
 
@@ -1729,6 +1759,11 @@ function paymentVerificationMessage(data) {
   if (data?.status === 'already_verified') return 'Payment already verified.';
   if (data?.status === 'manual_accepted') return 'Payment manually accepted.';
   return 'Payment verified.';
+}
+function formatPaymentReference(value) {
+  const ref = String(value || '').trim();
+  if (!ref) return '';
+  return ref.startsWith('AUTO-') || ref.startsWith('PAY-') ? 'system reference' : ref;
 }
 function resolveApiBaseUrl(value) {
   let configured = String(value || '').trim();

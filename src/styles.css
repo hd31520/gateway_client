@@ -170,6 +170,65 @@ pre {
   font-size: 13px;
   line-height: 1.55;
 }
+
+.checkout-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(8, 12, 20, 0.74);
+  backdrop-filter: blur(12px);
+}
+
+.checkout-popup {
+  position: relative;
+  width: min(100%, 430px);
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #101725;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+}
+
+.checkout-popup-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+
+.checkout-popup-summary,
+.checkout-wallet-box {
+  display: grid;
+  gap: 4px;
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.checkout-popup-summary strong {
+  color: var(--accent);
+  font-size: 28px;
+}
+
+.checkout-popup-summary small,
+.checkout-popup-note,
+.checkout-wallet-box span {
+  color: var(--muted);
+}
+
+.checkout-wallet-box strong {
+  overflow-wrap: anywhere;
+}
 ul {
   padding-left: 18px;
   color: var(--muted);
