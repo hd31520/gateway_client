@@ -1842,7 +1842,7 @@ function RenewalList({ renewals = [] }) {
 }
 
 function DocsList({ docs = [] }) {
-  return <section className="panel"><div className="section-title"><div><p className="eyebrow">Developer Docs</p><h2>Integration checklist</h2></div><span className="pill">{docs.length} items</span></div><div className="card-list">{docs.map((doc) => <article className="route-card" key={doc.title}><h3>{doc.title}</h3><p><strong>{doc.method}</strong> secure server route</p><small>{doc.auth}</small><code>{doc.body.join(', ') || 'No body'}</code>{doc.path === '/api/merchant/verify' ? <small>No customer payment reference needed. Match payer_number + amount + payment_time.</small> : null}</article>)}</div></section>;
+  return <section className="panel"><div className="section-title"><div><p className="eyebrow">Developer Docs</p><h2>Integration checklist</h2></div><span className="pill">{docs.length} items</span></div><div className="card-list">{docs.map((doc) => <article className="route-card" key={doc.title}><h3>{doc.title}</h3><p><strong>{doc.method}</strong> secure server route</p><small>{doc.auth}</small><code>{doc.body.join(', ') || 'No body'}</code>{doc.path === '/api/merchant/verify' ? <small>No customer payment reference needed. Match payer_number + amount + payment_time.</small> : null}{doc.url ? <p><a className="button-link secondary tiny-link" href={doc.url} target="_blank" rel="noreferrer">Open guide</a></p> : null}</article>)}</div></section>;
 }
 
 function ApiKeyList({ websites = [] }) {
