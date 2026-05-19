@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Download Gateway Android APK</title>
+    <style>body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial;margin:2rem}button{padding:.6rem 1rem;font-size:1rem}</style>
+  </head>
+  <body>
+    <h1>Download Gateway Android App</h1>
+    <p>Click the button below to download the APK and install on your Android device.</p>
+    <p>
+      <a id="apkLink" href="http://localhost:3000/gatewayflow-android.apk" download>
+        <button id="downloadBtn">Download APK</button>
+      </a>
+    </p>
+    <p>If your gateway server runs on a different host, replace the URL above with your server URL (e.g. <code>https://your-gateway.example.com/gatewayflow-android.apk</code>).</p>
+    <script>
+      // Try to fetch to confirm availability
+      (async function(){
+        const link = document.getElementById('apkLink');
+        try {
+          const resp = await fetch(link.href, { method: 'HEAD' });
+          if (!resp.ok) {
+            document.getElementById('downloadBtn').disabled = true;
+            const note = document.createElement('div'); note.textContent = 'APK not available on server (status: '+resp.status+')'; note.style.color='red'; document.body.appendChild(note);
+          }
+        } catch (e) {
+          document.getElementById('downloadBtn').disabled = true;
+          const note = document.createElement('div'); note.textContent = 'Unable to reach APK URL'; note.style.color='red'; document.body.appendChild(note);
+        }
+      })();
+    </script>
+  </body>
+</html>
