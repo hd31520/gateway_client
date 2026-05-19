@@ -998,7 +998,9 @@ strong, code, span, small, td, th, div { min-width: 0; }
   display: grid;
   gap: 6px;
 }
+.portal-sidebar nav a,
 .portal-sidebar nav button {
+  display: flex;
   justify-content: flex-start;
   min-height: 38px;
   border: 1px solid transparent;
@@ -1007,7 +1009,9 @@ strong, code, span, small, td, th, div { min-width: 0; }
   color: rgba(255, 255, 255, 0.72);
   box-shadow: none;
   text-align: left;
+  text-decoration: none;
 }
+.portal-sidebar nav a:hover, .portal-sidebar nav a.active,
 .portal-sidebar nav button:hover, .portal-sidebar nav button.active {
   border-color: rgba(255, 255, 255, 0.18);
   background: rgba(255, 255, 255, 0.12);
@@ -1421,6 +1425,7 @@ td small {
     padding-bottom: 4px;
     scrollbar-width: thin;
   }
+  .portal-sidebar nav a,
   .portal-sidebar nav button {
     flex: 0 0 auto;
     white-space: nowrap;

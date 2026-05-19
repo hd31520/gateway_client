@@ -879,7 +879,22 @@ function Portal(props) {
           <button type="button" className="brand sidebar-brand" onClick={onHome}><span>G</span>GatewayFlow</button>
           <div className="theme-pill">merchant suite</div>
           <nav>
-            {sidebarItems.map((item) => <button type="button" key={item} className={activeMenu === item ? 'active' : ''} onClick={() => onNavigateMenu(item)}>{item}</button>)}
+            {sidebarItems.map((item) => {
+              const route = viewPath('portal', item);
+              return (
+                <a
+                  key={item}
+                  href={route}
+                  className={activeMenu === item ? 'active' : ''}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onNavigateMenu(item);
+                  }}
+                >
+                  {item}
+                </a>
+              );
+            })}
           </nav>
         </aside>
       ) : null}
@@ -944,7 +959,22 @@ function AdminDashboard(props) {
           <button type="button" className="brand sidebar-brand" onClick={onHome}><span>G</span>GatewayFlow</button>
           <div className="theme-pill">operations</div>
           <nav>
-            {adminMenuItems.map((item) => <button type="button" key={item} className={activeAdminMenu === item ? 'active' : ''} onClick={() => onNavigateMenu(item)}>{item}</button>)}
+            {adminMenuItems.map((item) => {
+              const route = viewPath('admin', item);
+              return (
+                <a
+                  key={item}
+                  href={route}
+                  className={activeAdminMenu === item ? 'active' : ''}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onNavigateMenu(item);
+                  }}
+                >
+                  {item}
+                </a>
+              );
+            })}
           </nav>
         </aside>
       ) : null}
