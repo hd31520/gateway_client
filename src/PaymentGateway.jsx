@@ -10,6 +10,7 @@ export default function PaymentGateway() {
   const [status, setStatus] = useState(null); // 'pending' | 'success' | 'failed'
   const [timeLeft, setTimeLeft] = useState(120);
   const [loading, setLoading] = useState(false);
+  const [paymentId, setPaymentId] = useState(null);
 
   const paymentMethods = [
     { id: 'bkash', name: 'bKash', icon: '📱' },
@@ -72,17 +73,49 @@ export default function PaymentGateway() {
       });
 
       if (!response.ok) throw new Error('Failed to initiate payment');
-      
-      // Wait for SMS verification (server will notify via WebSocket or polling)
-      // This is mocked - in real implementation use WebSocket
+      // Get paymentId from server and start polling for status
       const result = await response.json();
       console.log('Payment initiated:', result);
+      if (result && result.paymentId) {
+        setPaymentId(result.paymentId);
+      }
+      setLoading(false);
     } catch (error) {
       console.error('Error:', error);
       setStatus('failed');
       setLoading(false);
     }
   };
+
+  // Poll server for payment status while pending
+  useEffect(() => {
+    if (status !== 'pending' || !paymentId) return;
+
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/payment/gateway/status/${paymentId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+
+        if (data.status === 'verified') {
+          setStatus('success');
+          setLoading(false);
+        } else if (data.status === 'expired' || data.status === 'cancelled') {
+          setStatus('failed');
+          setLoading(false);
+        }
+      } catch (e) {
+        console.error('Polling error:', e);
+      }
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [status, paymentId]);
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(receiverNumber);
