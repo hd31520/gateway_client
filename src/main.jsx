@@ -165,8 +165,11 @@ const emptyPortalData = {
     subtitle: '',
     gatewayUrl: '',
     widgetUrl: '',
+    localGatewayUrl: '',
+    localWidgetUrl: '',
     steps: [],
     snippet: [],
+    verifySnippet: [],
     checklist: []
   }
 };
@@ -1661,7 +1664,7 @@ function DeveloperDocsPanel({ websites, docs, merchantGuide }) {
   return (
     <section className="portal-grid-two align-start">
       <MerchantGuide guide={merchantGuide} />
-      <section className="panel"><p className="eyebrow">API Keys</p><h2>Website credentials</h2><p>Use these keys from your server or checkout popup integration. Customer payment verification sends payer number, amount, order ID, and payment time.</p><ApiKeyList websites={websites} /></section>
+      <section className="panel"><p className="eyebrow">API Keys</p><h2>Website credentials</h2><p>প্রতিটি active brand/domain-এর API key এখানে পাবেন। Widget popup-এ `apiKey` হিসেবে এই key দিন, আর `domain` হিসেবে ওই website domain দিন।</p><ApiKeyList websites={websites} /></section>
       <DocsList docs={docs} />
     </section>
   );
@@ -1670,15 +1673,25 @@ function DeveloperDocsPanel({ websites, docs, merchantGuide }) {
 function MerchantGuide({ guide }) {
   const steps = guide?.steps || [];
   const snippet = guide?.snippet || [];
+  const verifySnippet = guide?.verifySnippet || [];
   const checklist = guide?.checklist || [];
+  const gatewayUrl = guide?.gatewayUrl || 'https://payment-gateway-server-ten.vercel.app';
+  const widgetUrl = guide?.widgetUrl || `${gatewayUrl}/widget.js`;
+  const localGatewayUrl = guide?.localGatewayUrl || 'http://localhost:3000';
+  const localWidgetUrl = guide?.localWidgetUrl || `${localGatewayUrl}/widget.js`;
 
   return (
     <section className="panel">
       <p className="eyebrow">Developer Docs</p>
       <h2>{guide?.title || 'Merchant integration made easy'}</h2>
       <p>{guide?.subtitle || 'Follow these steps to connect another domain or website to GatewayFlow.'}</p>
-      <div className="route-card compact">Gateway host: <strong>{guide?.gatewayUrl || 'https://payment-gateway-server-ten.vercel.app'}</strong></div>
-      <div className="route-card compact">Widget script: <strong>{guide?.widgetUrl || 'https://payment-gateway-server-ten.vercel.app/widget.js'}</strong></div>
+      <div className="card-list">
+        <div className="route-card compact"><span>Production gateway origin</span><strong>{gatewayUrl}</strong><button type="button" className="ghost-button small" onClick={() => copyText(gatewayUrl)}>Copy</button></div>
+        <div className="route-card compact"><span>Production widget script</span><strong>{widgetUrl}</strong><button type="button" className="ghost-button small" onClick={() => copyText(widgetUrl)}>Copy</button></div>
+        <div className="route-card compact"><span>Local gateway origin</span><strong>{localGatewayUrl}</strong><button type="button" className="ghost-button small" onClick={() => copyText(localGatewayUrl)}>Copy</button></div>
+        <div className="route-card compact"><span>Local widget script</span><strong>{localWidgetUrl}</strong><button type="button" className="ghost-button small" onClick={() => copyText(localWidgetUrl)}>Copy</button></div>
+      </div>
+      <div className="route-card compact">Rule: `script src` এ `/widget.js` সহ full URL দিন। `window.GATEWAY_WIDGET_URL` এ শুধু origin দিন, `/widget.js` নয়।</div>
       <div className="card-list">
         {steps.map((item) => (
           <article className="route-card" key={item.step}>
@@ -1687,8 +1700,14 @@ function MerchantGuide({ guide }) {
           </article>
         ))}
       </div>
-      <h3>Copy-paste starter code</h3>
+      <h3>Copy-paste widget code</h3>
       <pre>{snippet.join('\n')}</pre>
+      {verifySnippet.length ? (
+        <>
+          <h3>Server verify API</h3>
+          <pre>{verifySnippet.join('\n')}</pre>
+        </>
+      ) : null}
       <h3>Important rules</h3>
       <div className="card-list">
         {checklist.map((item) => <div className="route-card compact" key={item}>{item}</div>)}
@@ -2018,7 +2037,7 @@ function RenewalList({ renewals = [] }) {
 }
 
 function DocsList({ docs = [] }) {
-  return <section className="panel"><div className="section-title"><div><p className="eyebrow">Developer Docs</p><h2>Integration checklist</h2></div><span className="pill">{docs.length} items</span></div><div className="card-list">{docs.map((doc) => <article className="route-card" key={doc.title}><h3>{doc.title}</h3><p><strong>{doc.method}</strong> secure server route</p><small>{doc.auth}</small><code>{doc.body.join(', ') || 'No body'}</code>{doc.path === '/api/merchant/verify' ? <small>No customer payment reference needed. Match payer_number + amount + payment_time.</small> : null}{doc.url ? <p><a className="button-link secondary tiny-link" href={doc.url} target="_blank" rel="noreferrer">Open guide</a></p> : null}</article>)}</div></section>;
+  return <section className="panel"><div className="section-title"><div><p className="eyebrow">API Routes</p><h2>What each route does</h2></div><span className="pill">{docs.length} items</span></div><div className="card-list">{docs.map((doc) => <article className="route-card" key={doc.title}><h3>{doc.title}</h3><p><strong>{doc.method}</strong> {doc.path}</p><small>{doc.auth}</small><code>{doc.body.join(', ') || 'No body'}</code>{doc.path === '/api/merchant/verify' ? <small>No TrxID needed. Match payer_number + amount + payment_time. Pending requests can be polled with GET /api/merchant/verify?request_id=...</small> : null}{doc.url ? <p><a className="button-link secondary tiny-link" href={doc.url} target="_blank" rel="noreferrer">Open full guide</a></p> : null}</article>)}</div></section>;
 }
 
 function ApiKeyList({ websites = [] }) {
