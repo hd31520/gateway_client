@@ -159,7 +159,16 @@ const emptyPortalData = {
   settings: defaultSettings,
   tickets: [],
   plans: [],
-  docs: []
+  docs: [],
+  merchantGuide: {
+    title: '',
+    subtitle: '',
+    gatewayUrl: '',
+    widgetUrl: '',
+    steps: [],
+    snippet: [],
+    checklist: []
+  }
 };
 
 const emptyAdminData = {
@@ -1423,7 +1432,7 @@ function DashboardContent(props) {
       {props.activeMenu === 'Android App' ? <AndroidPanel client={props.client} response={props.response} portalData={data} /> : null}
       {props.activeMenu === 'Home Page' ? <HomePagePanel portalData={data} /> : null}
       {props.activeMenu === 'SMS List' ? <SmsListPanel portalData={data} /> : null}
-      {props.activeMenu === 'Developer Docs' ? <DeveloperDocsPanel websites={props.websites} docs={data.docs} /> : null}
+      {props.activeMenu === 'Developer Docs' ? <DeveloperDocsPanel websites={props.websites} docs={data.docs} merchantGuide={data.merchantGuide} /> : null}
       {props.activeMenu === 'Our Support' ? <OurSupportPanel settings={data.settings} tickets={data.tickets} onCreateTicket={props.onCreateTicket} /> : null}
 
     </div>
@@ -1648,11 +1657,42 @@ function SmsListPanel({ portalData }) {
   );
 }
 
-function DeveloperDocsPanel({ websites, docs }) {
+function DeveloperDocsPanel({ websites, docs, merchantGuide }) {
   return (
     <section className="portal-grid-two align-start">
-      <DocsList docs={docs} />
+      <MerchantGuide guide={merchantGuide} />
       <section className="panel"><p className="eyebrow">API Keys</p><h2>Website credentials</h2><p>Use these keys from your server or checkout popup integration. Customer payment verification sends payer number, amount, order ID, and payment time.</p><ApiKeyList websites={websites} /></section>
+      <DocsList docs={docs} />
+    </section>
+  );
+}
+
+function MerchantGuide({ guide }) {
+  const steps = guide?.steps || [];
+  const snippet = guide?.snippet || [];
+  const checklist = guide?.checklist || [];
+
+  return (
+    <section className="panel">
+      <p className="eyebrow">Developer Docs</p>
+      <h2>{guide?.title || 'Merchant integration made easy'}</h2>
+      <p>{guide?.subtitle || 'Follow these steps to connect another domain or website to GatewayFlow.'}</p>
+      <div className="route-card compact">Gateway host: <strong>{guide?.gatewayUrl || 'https://payment-gateway-server-ten.vercel.app'}</strong></div>
+      <div className="route-card compact">Widget script: <strong>{guide?.widgetUrl || 'https://payment-gateway-server-ten.vercel.app/widget.js'}</strong></div>
+      <div className="card-list">
+        {steps.map((item) => (
+          <article className="route-card" key={item.step}>
+            <h3>{item.step}. {item.title}</h3>
+            <p>{item.text}</p>
+          </article>
+        ))}
+      </div>
+      <h3>Copy-paste starter code</h3>
+      <pre>{snippet.join('\n')}</pre>
+      <h3>Important rules</h3>
+      <div className="card-list">
+        {checklist.map((item) => <div className="route-card compact" key={item}>{item}</div>)}
+      </div>
     </section>
   );
 }
@@ -2046,7 +2086,8 @@ function normalizePortalData(data) {
     devices: data?.devices || [],
     tickets: data?.tickets || [],
     plans: data?.plans || [],
-    docs: data?.docs || []
+    docs: data?.docs || [],
+    merchantGuide: data?.merchantGuide || emptyPortalData.merchantGuide
   };
 }
 function normalizeAdminData(data) {
