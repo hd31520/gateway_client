@@ -475,7 +475,7 @@ function App() {
     const site = websites.find((item) => item.id === payload.websiteId);
     if (!site) {
       setCheckoutMessage('Select a website first.');
-      return;
+      return { success: false, error: 'Select a website first.' };
     }
     setCheckoutMessage('Verifying payment...');
     const result = await api('/merchant/verify', {
@@ -493,11 +493,13 @@ function App() {
       }
     });
     if (!result.ok || !result.data.success) {
-      setCheckoutMessage(errorMessage(result.data, 'Payment verification failed'));
-      return;
+      const message = errorMessage(result.data, 'Payment verification failed');
+      setCheckoutMessage(message);
+      return { success: false, error: message, ...(result.data || {}) };
     }
     setCheckoutMessage(paymentVerificationMessage(result.data));
     await loadClient();
+    return result.data;
   }
 
   async function saveSettings(settings) {
@@ -1551,19 +1553,93 @@ function WebsiteForm({ onSubmit, message, adminPayment = emptyPortalData.adminPa
   );
 }
 
+const checkoutWalletMeta = {
+  bkash: { label: 'bKash', tone: 'pink', icon: 'bK', action: 'Payment' },
+  nagad: { label: 'Nagad', tone: 'orange', icon: 'Ng', action: 'Payment' },
+  rocket: { label: 'Rocket', tone: 'purple', icon: 'Rk', action: 'Send Money' },
+  upay: { label: 'Upay', tone: 'yellow', icon: 'Up', action: 'Payment' },
+  bank: { label: 'Bank', tone: 'blue', icon: 'Bk', action: 'Transfer' },
+  other: { label: 'Wallet', tone: 'green', icon: 'Pay', action: 'Payment' }
+};
+
+function checkoutWalletOptions(site) {
+  const configuredWallets = Array.isArray(site?.wallets) ? site.wallets : Array.isArray(site?.paymentMethods) ? site.paymentMethods : [];
+  const source = configuredWallets.length ? configuredWallets : [{ provider: site?.walletProvider, number: site?.walletNumber, receiverName: site?.receiverName }];
+  return source.map((wallet, index) => {
+    const provider = String(wallet.provider || wallet.walletProvider || wallet.type || 'bkash').toLowerCase();
+    const configured = checkoutWalletMeta[provider] || checkoutWalletMeta.other;
+    return {
+      id: `${provider}-${index}`,
+      provider,
+      number: wallet.number || wallet.walletNumber || wallet.account || '',
+      receiverName: wallet.receiverName || site?.receiverName || site?.name || site?.domain || 'Merchant',
+      ...configured
+    };
+  });
+}
+
 function CheckoutForm({ websites, onSubmit, message }) {
   const [form, setForm] = useState({ websiteId: '', orderId: `ORDER-${Date.now().toString().slice(-6)}`, amount: '500', payerNumber: '', sellerName: '', buyerName: '', returnUrl: '' });
   const [popupOpen, setPopupOpen] = useState(false);
+  const [popupStep, setPopupStep] = useState('methods');
+  const [selectedWalletId, setSelectedWalletId] = useState('');
+  const [countdown, setCountdown] = useState(120);
+  const [popupMessage, setPopupMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   useEffect(() => { if (!form.websiteId && websites[0]?.id) setForm((current) => ({ ...current, websiteId: websites[0].id })); }, [websites, form.websiteId]);
   function update(field, value) { setForm((current) => ({ ...current, [field]: value })); }
   const selectedWebsite = websites.find((site) => site.id === form.websiteId);
+  const walletOptions = useMemo(() => checkoutWalletOptions(selectedWebsite), [selectedWebsite]);
+  const selectedWallet = walletOptions.find((wallet) => wallet.id === selectedWalletId) || walletOptions[0];
   const cleanPayerNumber = form.payerNumber.replace(/\D/g, '');
-  async function submitPopup(event) {
-    event.preventDefault();
-    await onSubmit({ ...form, payerNumber: cleanPayerNumber, paymentTime: new Date().toISOString() });
+  const canContinue = Boolean(selectedWebsite && selectedWallet?.number);
+  useEffect(() => {
+    if (popupOpen && !selectedWalletId && walletOptions[0]?.id) setSelectedWalletId(walletOptions[0].id);
+  }, [popupOpen, selectedWalletId, walletOptions]);
+  useEffect(() => {
+    if (!popupOpen || popupStep !== 'waiting') return undefined;
+    setCountdown(120);
+    const timer = window.setInterval(() => {
+      setCountdown((current) => {
+        if (current <= 1) {
+          window.clearInterval(timer);
+          setPopupStep('failed');
+          setPopupMessage('Payment failed. No matching Android SMS arrived within 2 minutes.');
+          return 0;
+        }
+        return current - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [popupOpen, popupStep]);
+  function openPopup() {
+    setPopupStep('methods');
+    setPopupMessage('');
+    setSubmitting(false);
+    setPopupOpen(true);
   }
+  async function submitPopup() {
+    setSubmitting(true);
+    setPopupStep('waiting');
+    setPopupMessage('Android SMS listener is waiting for sender number, amount, and receive time match.');
+    const result = await onSubmit({ ...form, payerNumber: cleanPayerNumber, paymentTime: new Date().toISOString(), walletProvider: selectedWallet?.provider || selectedWallet?.id });
+    setSubmitting(false);
+    if (!result?.success) {
+      setPopupStep('failed');
+      setPopupMessage(result?.error || result?.message || 'Payment verification failed.');
+      return;
+    }
+    const status = String(result.status || '').toLowerCase();
+    if (['verified', 'manual_accepted', 'already_verified'].includes(status)) {
+      setPopupStep('success');
+      setPopupMessage(paymentVerificationMessage(result));
+    } else {
+      setPopupMessage(result.message || 'Waiting for Android SMS confirmation. This popup will fail after 2 minutes without a matching SMS.');
+    }
+  }
+  const minuteText = `${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, '0')}`;
   return (
-    <form className="panel form-card checkout-card" onSubmit={(event) => { event.preventDefault(); setPopupOpen(true); }}>
+    <form className="panel form-card checkout-card" onSubmit={(event) => { event.preventDefault(); openPopup(); }}>
       <p className="eyebrow">Payment Link</p><h2>Demo Payment</h2>
       <label htmlFor="checkoutWebsite">Website</label><select id="checkoutWebsite" value={form.websiteId} onChange={(event) => update('websiteId', event.target.value)} required>{websites.length ? websites.map((site) => <option key={site.id} value={site.id}>{site.domain} ({site.subscriptionStatus})</option>) : <option value="">Add a website first</option>}</select>
       <label htmlFor="orderId">Order ID</label><input id="orderId" value={form.orderId} onChange={(event) => update('orderId', event.target.value)} required />
@@ -1571,26 +1647,69 @@ function CheckoutForm({ websites, onSubmit, message }) {
       <label htmlFor="buyerName">Buyer name</label><input id="buyerName" value={form.buyerName} onChange={(event) => update('buyerName', event.target.value)} placeholder="Customer name" />
       <label htmlFor="amount">Amount</label><input id="amount" type="number" min="1" step="0.01" value={form.amount} onChange={(event) => update('amount', event.target.value)} required />
       <label htmlFor="returnUrl">Return URL</label><input id="returnUrl" value={form.returnUrl} placeholder="https://shop.com/order-return" onChange={(event) => update('returnUrl', event.target.value)} />
-      <button type="submit">Open Payment Popup</button><Message text={message} />
+      <button type="submit" disabled={!websites.length}>Open Payment Popup</button><Message text={message} />
       {popupOpen ? (
         <div className="checkout-popup-backdrop" role="dialog" aria-modal="true" aria-labelledby="checkoutPopupTitle">
-          <div className="checkout-popup">
+          <div className={`checkout-popup gateway-wallet-${selectedWallet?.tone || 'pink'}`}>
             <button type="button" className="checkout-popup-close" onClick={() => setPopupOpen(false)} aria-label="Close payment popup">x</button>
-            <p className="eyebrow">Secured by GatewayFlow</p>
-            <h2 id="checkoutPopupTitle">Complete Payment</h2>
-            <div className="checkout-popup-summary">
-              <span>{selectedWebsite?.domain || 'Merchant website'}</span>
+            <div className="checkout-browserbar"><span /><span /><span /><strong>Secured by GatewayFlow</strong></div>
+            <div className="checkout-popup-header">
+              <div><p className="eyebrow">GatewayFlow Checkout</p><h2 id="checkoutPopupTitle">{selectedWebsite?.name || selectedWebsite?.domain || 'Merchant payment'}</h2></div>
               <strong>{formatMoney(form.amount)}</strong>
-              <small>Send the exact amount, then enter the sender number used in bKash/Nagad.</small>
             </div>
-            <div className="checkout-wallet-box">
-              <span>Merchant wallet</span>
-              <strong>{selectedWebsite?.walletProvider || 'wallet'} {selectedWebsite?.walletNumber || 'not configured'}</strong>
-            </div>
-            <label htmlFor="payerNumber">Sender number</label>
-            <input id="payerNumber" value={form.payerNumber} inputMode="tel" maxLength={14} placeholder="01XXXXXXXXX" onChange={(event) => update('payerNumber', event.target.value.replace(/\D/g, ''))} required />
-            <button type="button" disabled={cleanPayerNumber.length < 10} onClick={submitPopup}>Confirm Payment</button>
-            <small className="checkout-popup-note">No payment reference is needed. GatewayFlow checks the sender number, exact amount, and SMS receive time.</small>
+            {popupStep === 'methods' ? (
+              <div className="gateway-step">
+                <p className="checkout-popup-note">Select the payment system enabled for this brand. No TrxID is required in this checkout.</p>
+                <div className="checkout-wallet-grid">
+                  {walletOptions.map((wallet) => (
+                    <button type="button" key={wallet.id} className={`checkout-wallet-option ${selectedWallet?.id === wallet.id ? 'active' : ''}`} onClick={() => { setSelectedWalletId(wallet.id); setPopupStep('walletPhone'); }} disabled={!wallet.number}>
+                      <span className={`wallet-icon ${wallet.tone}`}>{wallet.icon}</span>
+                      <strong>{wallet.label}</strong>
+                      <small>{wallet.number || 'Not configured'}</small>
+                    </button>
+                  ))}
+                </div>
+                <button type="button" disabled={!canContinue} onClick={() => setPopupStep('walletPhone')}>Continue</button>
+              </div>
+            ) : null}
+            {popupStep === 'walletPhone' ? (
+              <div className="gateway-step wallet-entry-step">
+                <div className="wallet-brand-head"><span className={`wallet-icon large ${selectedWallet?.tone}`}>{selectedWallet?.icon}</span><div><strong>{selectedWallet?.label} {selectedWallet?.action}</strong><small>{selectedWebsite?.domain || 'Merchant website'}</small></div><b>{formatMoney(form.amount)}</b></div>
+                <label htmlFor="payerNumber">Your {selectedWallet?.label} account number</label>
+                <input id="payerNumber" value={form.payerNumber} inputMode="tel" maxLength={14} placeholder="01XXXXXXXXX" onChange={(event) => update('payerNumber', event.target.value.replace(/\D/g, ''))} required />
+                <div className="checkout-popup-actions"><button type="button" className="ghost-button" onClick={() => setPopupStep('methods')}>Back</button><button type="button" disabled={cleanPayerNumber.length < 10} onClick={() => setPopupStep('instructions')}>Next</button></div>
+              </div>
+            ) : null}
+            {popupStep === 'instructions' ? (
+              <div className="gateway-step">
+                <div className="checkout-wallet-box">
+                  <span>Send money to this merchant number</span>
+                  <strong>{selectedWallet?.number || 'not configured'}</strong>
+                  <button type="button" className="ghost-button small" onClick={() => copyText(selectedWallet?.number || '')}>Copy number</button>
+                </div>
+                <div className="checkout-tutorial">
+                  <div><b>1</b><span>Open {selectedWallet?.label} app and choose {selectedWallet?.action}.</span></div>
+                  <div><b>2</b><span>Send exactly {formatMoney(form.amount)} to {selectedWallet?.number}.</span></div>
+                  <div><b>3</b><span>GatewayFlow Android listens for SMS and matches sender {cleanPayerNumber}, amount, and time.</span></div>
+                </div>
+                <button type="button" disabled={submitting || cleanPayerNumber.length < 10} onClick={submitPopup}>{submitting ? 'Starting...' : 'I have paid'}</button>
+                <small className="checkout-popup-note">The popup waits up to 2 minutes for the Android SMS server confirmation.</small>
+              </div>
+            ) : null}
+            {popupStep === 'waiting' ? (
+              <div className="gateway-result waiting">
+                <span className="gateway-beep">BEEP</span>
+                <h3>Waiting for Android SMS</h3>
+                <p>{popupMessage}</p>
+                <strong>{minuteText}</strong>
+              </div>
+            ) : null}
+            {popupStep === 'success' ? (
+              <div className="gateway-result success"><span>OK</span><h3>Payment Successful</h3><p>{popupMessage || 'Server confirmed the matching SMS payment.'}</p><button type="button" onClick={() => setPopupOpen(false)}>Done</button></div>
+            ) : null}
+            {popupStep === 'failed' ? (
+              <div className="gateway-result failed"><span>!</span><h3>Payment Failed</h3><p>{popupMessage}</p><button type="button" onClick={() => setPopupStep('methods')}>Try Again</button></div>
+            ) : null}
           </div>
         </div>
       ) : null}
