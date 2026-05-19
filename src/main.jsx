@@ -66,6 +66,45 @@ const sidebarItems = [
 
 const adminMenuItems = ['Overview', 'Brand Requests', 'Billing Requests', 'Merchant Verify', 'Payments', 'History', 'Clients', 'Devices', 'Support', 'Settings'];
 
+const portalMenuRoutes = {
+  Dashboard: '',
+  'Add Funds': 'add-funds',
+  'Payment Link': 'payment-link',
+  Transactions: 'transactions',
+  Invoice: 'invoice',
+  Data: 'data',
+  Brands: 'brands',
+  Devices: 'devices',
+  'Payment Settings': 'payment-settings',
+  Others: 'others',
+  Affiliates: 'affiliates',
+  'Support Tickets': 'support-tickets',
+  Plans: 'plans',
+  'My Plan': 'my-plan',
+  Currency: 'currency',
+  'Android App': 'android-app',
+  'Home Page': 'home-page',
+  'SMS List': 'sms-list',
+  'Developer Docs': 'developer-docs',
+  'Our Support': 'our-support'
+};
+
+const adminMenuRoutes = {
+  Overview: '',
+  'Brand Requests': 'brand-requests',
+  'Billing Requests': 'billing-requests',
+  'Merchant Verify': 'merchant-verify',
+  Payments: 'payments',
+  History: 'history',
+  Clients: 'clients',
+  Devices: 'devices',
+  Support: 'support',
+  Settings: 'settings'
+};
+
+const defaultPortalMenu = 'Dashboard';
+const defaultAdminMenu = 'Overview';
+
 const defaultSettings = {
   currency: 'BDT',
   timezone: 'Asia/Dhaka',
@@ -154,23 +193,74 @@ const emptyAdminData = {
   tickets: []
 };
 
-function resolveInitialView() {
-  const pathname = window.location.pathname.replace(/\/+$/, '').toLowerCase();
-  if (pathname === '/admin') return 'admin';
-  if (pathname === '/portal') return 'portal';
-
-  const hashView = window.location.hash.replace('#', '').toLowerCase();
-  if (hashView === 'portal') return 'portal';
-  if (hashView === 'admin') return 'admin';
-
-  if (localStorage.getItem(ADMIN_TOKEN_KEY)) return 'admin';
-  if (localStorage.getItem(TOKEN_KEY)) return 'portal';
-  return 'home';
+function normalizeRouteSlug(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
-function viewPath(viewName) {
-  if (viewName === 'admin') return '/admin';
-  if (viewName === 'portal') return '/portal';
+function resolveMenuFromPath(routeMap, slug, fallback) {
+  const normalizedSlug = normalizeRouteSlug(slug);
+  const entry = Object.entries(routeMap).find(([, routeSlug]) => routeSlug === normalizedSlug);
+  return entry ? entry[0] : fallback;
+}
+
+function resolveRouteState() {
+  const pathname = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+  const hashRoute = window.location.hash.replace(/^#\/?/, '').toLowerCase();
+
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    return {
+      view: 'admin',
+      activeMenu: defaultPortalMenu,
+      activeAdminMenu: resolveMenuFromPath(adminMenuRoutes, pathname.slice('/admin'.length), defaultAdminMenu)
+    };
+  }
+
+  if (pathname === '/portal' || pathname.startsWith('/portal/')) {
+    return {
+      view: 'portal',
+      activeMenu: resolveMenuFromPath(portalMenuRoutes, pathname.slice('/portal'.length), defaultPortalMenu),
+      activeAdminMenu: defaultAdminMenu
+    };
+  }
+
+  if (hashRoute === 'admin' || hashRoute.startsWith('admin/')) {
+    return {
+      view: 'admin',
+      activeMenu: defaultPortalMenu,
+      activeAdminMenu: resolveMenuFromPath(adminMenuRoutes, hashRoute.slice('admin'.length), defaultAdminMenu)
+    };
+  }
+
+  if (hashRoute === 'portal' || hashRoute.startsWith('portal/')) {
+    return {
+      view: 'portal',
+      activeMenu: resolveMenuFromPath(portalMenuRoutes, hashRoute.slice('portal'.length), defaultPortalMenu),
+      activeAdminMenu: defaultAdminMenu
+    };
+  }
+
+  if (localStorage.getItem(ADMIN_TOKEN_KEY)) {
+    return { view: 'admin', activeMenu: defaultPortalMenu, activeAdminMenu: defaultAdminMenu };
+  }
+
+  if (localStorage.getItem(TOKEN_KEY)) {
+    return { view: 'portal', activeMenu: defaultPortalMenu, activeAdminMenu: defaultAdminMenu };
+  }
+
+  return { view: 'home', activeMenu: defaultPortalMenu, activeAdminMenu: defaultAdminMenu };
+}
+
+function viewPath(viewName, menuName = '') {
+  if (viewName === 'admin') {
+    const route = adminMenuRoutes[menuName] || '';
+    return route ? `/admin/${route}` : '/admin';
+  }
+
+  if (viewName === 'portal') {
+    const route = portalMenuRoutes[menuName] || '';
+    return route ? `/portal/${route}` : '/portal';
+  }
+
   return '/';
 }
 
@@ -211,6 +301,7 @@ function planOptionLabel(option) {
 }
 
 function App() {
+  const initialRouteState = resolveRouteState();
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || localStorage.getItem(ADMIN_TOKEN_KEY) || '');
   const [adminToken, setAdminToken] = useState(() => localStorage.getItem(ADMIN_TOKEN_KEY) || '');
   const [client, setClient] = useState(null);
@@ -227,9 +318,9 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [loadingPortal, setLoadingPortal] = useState(false);
   const [loadingAdmin, setLoadingAdmin] = useState(false);
-  const [view, setView] = useState(() => resolveInitialView());
-  const [activeMenu, setActiveMenu] = useState('Dashboard');
-  const [activeAdminMenu, setActiveAdminMenu] = useState('Overview');
+  const [view, setView] = useState(() => initialRouteState.view);
+  const [activeMenu, setActiveMenu] = useState(() => initialRouteState.activeMenu);
+  const [activeAdminMenu, setActiveAdminMenu] = useState(() => initialRouteState.activeAdminMenu);
 
   const stats = useMemo(() => {
     const summary = portalData.summary || emptyPortalData.summary;
@@ -249,19 +340,32 @@ function App() {
   }, [adminToken]);
 
   useEffect(() => {
-    const onPopState = () => setView(resolveInitialView());
+    const onPopState = () => {
+      const nextRouteState = resolveRouteState();
+      setView(nextRouteState.view);
+      setActiveMenu(nextRouteState.activeMenu);
+      setActiveAdminMenu(nextRouteState.activeAdminMenu);
+    };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
   useEffect(() => {
-    if (view !== 'home') navigateView(view, { replace: true });
+    if (view === 'home') return;
+    const nextPath = viewPath(view, view === 'portal' ? activeMenu : activeAdminMenu);
+    const currentPath = `${window.location.pathname}${window.location.search}`;
+    if (currentPath !== nextPath || window.location.hash) {
+      window.history.replaceState({ view, activeMenu, activeAdminMenu }, '', nextPath);
+    }
   }, []);
 
-  function navigateView(nextView, { replace = false } = {}) {
-    const path = viewPath(nextView);
+  function navigateView(nextView, { replace = false, menuName } = {}) {
+    const nextMenuName = nextView === 'portal' ? (menuName || defaultPortalMenu) : nextView === 'admin' ? (menuName || defaultAdminMenu) : '';
+    const path = viewPath(nextView, nextMenuName);
     const currentPath = `${window.location.pathname}${window.location.search}`;
     setView(nextView);
+    if (nextView === 'portal') setActiveMenu(nextMenuName);
+    if (nextView === 'admin') setActiveAdminMenu(nextMenuName);
     if (currentPath !== path || window.location.hash) {
       const method = replace ? 'replaceState' : 'pushState';
       window.history[method]({ view: nextView }, '', path);
@@ -544,6 +648,7 @@ function App() {
         busy={busy}
         loadingPortal={loadingPortal}
         onHome={() => navigateView('home')}
+        onNavigateMenu={(menuName) => navigateView('portal', { menuName })}
         onLogout={logout}
         onRefresh={loadClient}
         onAuth={authenticate}
@@ -569,6 +674,7 @@ function App() {
         loadingAdmin={loadingAdmin}
         onHome={() => navigateView('home')}
         onOpenPortal={() => navigateView('portal')}
+        onNavigateMenu={(menuName) => navigateView('admin', { menuName })}
         onLogout={logoutAdmin}
         onRefresh={() => loadAdmin()}
         onAuth={(formData) => authenticate('login', formData)}
@@ -765,7 +871,7 @@ function DocumentationSection() {
 }
 
 function Portal(props) {
-  const { token, activeMenu, setActiveMenu, onHome, onLogout } = props;
+  const { token, activeMenu, onNavigateMenu, onHome, onLogout } = props;
   return (
     <main className={`portal-shell ${token ? '' : 'portal-login-shell'}`}>
       {token ? (
@@ -773,7 +879,7 @@ function Portal(props) {
           <button type="button" className="brand sidebar-brand" onClick={onHome}><span>G</span>GatewayFlow</button>
           <div className="theme-pill">merchant suite</div>
           <nav>
-            {sidebarItems.map((item) => <button type="button" key={item} className={activeMenu === item ? 'active' : ''} onClick={() => setActiveMenu(item)}>{item}</button>)}
+            {sidebarItems.map((item) => <button type="button" key={item} className={activeMenu === item ? 'active' : ''} onClick={() => onNavigateMenu(item)}>{item}</button>)}
           </nav>
         </aside>
       ) : null}
@@ -830,7 +936,7 @@ function AuthForm({ title, eyebrow, mode, busy, onSubmit }) {
 }
 
 function AdminDashboard(props) {
-  const { adminToken, activeAdminMenu, setActiveAdminMenu, onHome, onOpenPortal, onLogout } = props;
+  const { adminToken, activeAdminMenu, onNavigateMenu, onHome, onOpenPortal, onLogout } = props;
   return (
     <main className={`portal-shell admin-shell ${adminToken ? '' : 'portal-login-shell'}`}>
       {adminToken ? (
@@ -838,7 +944,7 @@ function AdminDashboard(props) {
           <button type="button" className="brand sidebar-brand" onClick={onHome}><span>G</span>GatewayFlow</button>
           <div className="theme-pill">operations</div>
           <nav>
-            {adminMenuItems.map((item) => <button type="button" key={item} className={activeAdminMenu === item ? 'active' : ''} onClick={() => setActiveAdminMenu(item)}>{item}</button>)}
+            {adminMenuItems.map((item) => <button type="button" key={item} className={activeAdminMenu === item ? 'active' : ''} onClick={() => onNavigateMenu(item)}>{item}</button>)}
           </nav>
         </aside>
       ) : null}
