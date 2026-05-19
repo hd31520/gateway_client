@@ -489,7 +489,6 @@ function App() {
         order_id: payload.orderId,
         seller_name: payload.sellerName,
         buyer_name: payload.buyerName,
-        buyer_address: payload.buyerAddress,
         return_url: payload.returnUrl
       }
     });
@@ -1553,7 +1552,7 @@ function WebsiteForm({ onSubmit, message, adminPayment = emptyPortalData.adminPa
 }
 
 function CheckoutForm({ websites, onSubmit, message }) {
-  const [form, setForm] = useState({ websiteId: '', orderId: `ORDER-${Date.now().toString().slice(-6)}`, amount: '500', payerNumber: '', sellerName: '', buyerName: '', buyerAddress: '', returnUrl: '' });
+  const [form, setForm] = useState({ websiteId: '', orderId: `ORDER-${Date.now().toString().slice(-6)}`, amount: '500', payerNumber: '', sellerName: '', buyerName: '', returnUrl: '' });
   const [popupOpen, setPopupOpen] = useState(false);
   useEffect(() => { if (!form.websiteId && websites[0]?.id) setForm((current) => ({ ...current, websiteId: websites[0].id })); }, [websites, form.websiteId]);
   function update(field, value) { setForm((current) => ({ ...current, [field]: value })); }
@@ -1570,7 +1569,6 @@ function CheckoutForm({ websites, onSubmit, message }) {
       <label htmlFor="orderId">Order ID</label><input id="orderId" value={form.orderId} onChange={(event) => update('orderId', event.target.value)} required />
       <label htmlFor="sellerName">Seller name</label><input id="sellerName" value={form.sellerName} onChange={(event) => update('sellerName', event.target.value)} placeholder="Merchant or seller name" />
       <label htmlFor="buyerName">Buyer name</label><input id="buyerName" value={form.buyerName} onChange={(event) => update('buyerName', event.target.value)} placeholder="Customer name" />
-      <label htmlFor="buyerAddress">Buyer address</label><input id="buyerAddress" value={form.buyerAddress} onChange={(event) => update('buyerAddress', event.target.value)} placeholder="Customer address" />
       <label htmlFor="amount">Amount</label><input id="amount" type="number" min="1" step="0.01" value={form.amount} onChange={(event) => update('amount', event.target.value)} required />
       <label htmlFor="returnUrl">Return URL</label><input id="returnUrl" value={form.returnUrl} placeholder="https://shop.com/order-return" onChange={(event) => update('returnUrl', event.target.value)} />
       <button type="submit">Open Payment Popup</button><Message text={message} />
