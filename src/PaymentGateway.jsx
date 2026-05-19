@@ -60,13 +60,24 @@ export default function PaymentGateway() {
     setStatus('pending');
     setTimeLeft(120);
 
+    function normalizePhone(raw) {
+      let s = String(raw || '').trim();
+      s = s.replace(/[^0-9+]/g, '');
+      if (s.startsWith('+880')) s = '0' + s.slice(4);
+      if (s.startsWith('880')) s = '0' + s.slice(3);
+      if (!s.startsWith('0') && s.length === 10 && s.startsWith('1')) s = '0' + s;
+      return s;
+    }
+
     try {
-      const response = await fetch('/api/payment/initiate', {
+      const normPhone = normalizePhone(phoneNumber);
+      setPhoneNumber(normPhone);
+      const response = await fetch('/api/payment/gateway/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentMethod: selectedMethod.id,
-          senderPhone: phoneNumber,
+          senderPhone: normPhone,
           receiverPhone: receiverNumber,
           amount: parseFloat(amount),
         }),
