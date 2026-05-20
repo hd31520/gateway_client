@@ -10,20 +10,17 @@
     <h1>Download Gateway Android App</h1>
     <p>Click the button below to download the APK and install on your Android device.</p>
     <p>
-      <label for="apiKey">API Key (clients with permission):</label>
-      <input id="apiKey" placeholder="pg_live_... or user_..." style="width:100%;max-width:420px;margin-top:.5rem;" />
-    </p>
-    <p>
       <button id="downloadBtn">Download APK</button>
     </p>
-    <p>If your gateway server runs on a different host, replace the URL above with your server URL (e.g. <code>https://your-gateway.example.com/gatewayflow-android.apk</code>).</p>
+    <p>The APK is served from the GatewayFlow server, not the client website.</p>
     <script>
+      const APK_URL = 'https://payment-gateway-server-ten.vercel.app/gatewayflow-android.apk';
+
       // Try to fetch to confirm availability
       (async function(){
-        const link = document.getElementById('apkLink');
         try {
             // Check existence
-            const resp = await fetch('/gatewayflow-android.apk', { method: 'HEAD' });
+            const resp = await fetch(APK_URL, { method: 'HEAD' });
             if (!resp.ok) {
               document.getElementById('downloadBtn').disabled = true;
               const note = document.createElement('div'); note.textContent = 'APK not available on server (status: '+resp.status+')'; note.style.color='red'; document.body.appendChild(note);
@@ -34,20 +31,13 @@
           }
       
         document.getElementById('downloadBtn').addEventListener('click', async function(){
-          const key = document.getElementById('apiKey').value.trim();
-          if (!key) { alert('Enter your API key to download'); return; }
           try {
-            const resp = await fetch('/api/apk/download', { headers: { Authorization: 'Bearer ' + key } });
-            if (!resp.ok) {
-              const json = await resp.json().catch(()=>({}));
-              alert('Download failed: ' + (json.error || resp.status));
-              return;
-            }
-            const blob = await resp.blob();
-            const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = 'gatewayflow-android.apk'; document.body.appendChild(a); a.click(); a.remove();
-            URL.revokeObjectURL(url);
+            a.href = APK_URL;
+            a.download = 'gatewayflow-android.apk';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
           } catch (e) {
             alert('Download error');
           }
