@@ -348,6 +348,14 @@ function App() {
   }, [token]);
 
   useEffect(() => {
+    if (!token || view !== 'portal') return undefined;
+    const timer = window.setInterval(() => {
+      loadClient({ silent: true });
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, [token, view]);
+
+  useEffect(() => {
     if (adminToken) loadAdmin(adminToken);
   }, [adminToken]);
 
@@ -462,10 +470,10 @@ function App() {
     setAuthMessage('Welcome in.');
   }
 
-  async function loadClient() {
-    setLoadingPortal(true);
+  async function loadClient(options = {}) {
+    if (!options.silent) setLoadingPortal(true);
     const result = await api('/client/me?view=dashboard', { auth: true });
-    setLoadingPortal(false);
+    if (!options.silent) setLoadingPortal(false);
     if (!result.ok) {
       if (result.status === 401 || result.status === 403) await logout(false, false);
       return;
@@ -618,6 +626,17 @@ function App() {
     return result.data;
   }
 
+  async function pollPaymentStatus({ websiteId, requestId }) {
+    const site = websites.find((item) => item.id === websiteId);
+    if (!site || !requestId) return { success: false, error: 'Payment request not found.' };
+    const result = await api(`/merchant/verify?request_id=${encodeURIComponent(requestId)}&domain=${encodeURIComponent(site.domain)}`, {
+      method: 'GET',
+      apiKey: site.apiKey
+    });
+    if (result.ok && result.data.success) await loadClient({ silent: true });
+    return result.data || { success: false, error: 'Payment status request failed.' };
+  }
+
   async function saveSettings(settings) {
     setRouteMessage('Saving settings...');
     const result = await api('/client/me?resource=settings', { method: 'PATCH', auth: true, body: settings });
@@ -667,6 +686,7 @@ function App() {
         onAddWebsite={addWebsite}
         onRenewWebsite={renewWebsite}
         onVerifyPayment={verifyPayment}
+        onPollPaymentStatus={pollPaymentStatus}
         onSaveSettings={saveSettings}
         onCreateTicket={createTicket}
       />
@@ -1445,7 +1465,7 @@ function DashboardContent(props) {
 function WalletCard({ label, value, sub, tone }) { return <article className={`wallet-card ${tone}`}><span>{label}</span><strong>{value}</strong>{sub ? <small>{sub}</small> : null}</article>; }
 function MiniStat({ label, value, sub }) { return <article className="mini-stat-card"><span>{label}</span><strong>{value}</strong><small>{sub}</small></article>; }
 
-function OverviewContent({ client, websites, stats, portalData, websiteMessage, checkoutMessage, response, onAddWebsite, onRenewWebsite, onVerifyPayment }) {
+function OverviewContent({ client, websites, stats, portalData, websiteMessage, checkoutMessage, response, onAddWebsite, onRenewWebsite, onVerifyPayment, onPollPaymentStatus }) {
   const merchantItems = portalData.merchantHistory?.length ? portalData.merchantHistory : portalData.transactions;
   return (
     <>
@@ -1455,7 +1475,7 @@ function OverviewContent({ client, websites, stats, portalData, websiteMessage, 
         <MiniStat label="Awaiting Processing" value={portalData.summary.pendingTransactions} sub={`${formatMoney(portalData.summary.pendingAmount)} waiting`} />
         <MiniStat label="Unpaid Invoices" value={portalData.summary.unpaidInvoices} sub={`${portalData.summary.dueWebsites} websites need renewal`} />
       </section>
-      <section className="portal-grid-two"><WebsiteForm onSubmit={onAddWebsite} message={websiteMessage} adminPayment={portalData.adminPayment} /><CheckoutForm websites={websites} onSubmit={onVerifyPayment} message={checkoutMessage} /></section>
+      <section className="portal-grid-two"><WebsiteForm onSubmit={onAddWebsite} message={websiteMessage} adminPayment={portalData.adminPayment} /><CheckoutForm websites={websites} onSubmit={onVerifyPayment} onPollStatus={onPollPaymentStatus} message={checkoutMessage} /></section>
       <section className="portal-grid-two align-start"><WebsiteList websites={websites} onRenew={onRenewWebsite} /><AndroidCard client={client} response={response} devices={portalData.devices} websites={websites} /></section>
       <section className="panel transaction-panel"><div className="section-title"><div><p className="eyebrow">Transaction Report</p><h2>Merchant payment history</h2></div><span className="pill">{merchantItems.length} records</span></div><TransactionTable items={merchantItems} /></section>
     </>
@@ -1536,10 +1556,10 @@ function BillingRequestList({ items = [] }) {
   );
 }
 
-function PaymentLinkPanel({ websites, checkoutMessage, onVerifyPayment, portalData }) {
+function PaymentLinkPanel({ websites, checkoutMessage, onVerifyPayment, onPollPaymentStatus, portalData }) {
   return (
     <section className="portal-grid-two align-start">
-      <CheckoutForm websites={websites} onSubmit={onVerifyPayment} message={checkoutMessage} />
+      <CheckoutForm websites={websites} onSubmit={onVerifyPayment} onPollStatus={onPollPaymentStatus} message={checkoutMessage} />
       <InfoPanel title="Live checkout rules" eyebrow="Payment Link" text="Payment opens in a GatewayFlow popup. No customer payment reference is required; verification uses sender number, exact amount, and SMS receive time." items={[`${websites.length} websites available`, `${portalData.summary.completedTransactions} successful verifications`, `${portalData.summary.pendingMerchantVerifications} merchant verifications waiting`]} />
     </section>
   );
@@ -1775,7 +1795,7 @@ function checkoutWalletOptions(site) {
   });
 }
 
-function CheckoutForm({ websites, onSubmit, message }) {
+function CheckoutForm({ websites, onSubmit, onPollStatus, message }) {
   const [form, setForm] = useState({ websiteId: '', orderId: `ORDER-${Date.now().toString().slice(-6)}`, amount: '500', payerNumber: '', sellerName: '', buyerName: '', returnUrl: '' });
   const [popupOpen, setPopupOpen] = useState(false);
   const [popupStep, setPopupStep] = useState('methods');
@@ -1809,6 +1829,17 @@ function CheckoutForm({ websites, onSubmit, message }) {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [popupOpen, popupStep]);
+  async function waitForServerConfirmation(requestId) {
+    if (!requestId || !onPollStatus) return null;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      const data = await onPollStatus({ websiteId: form.websiteId, requestId });
+      const status = String(data?.status || '').toLowerCase();
+      if (['verified', 'manual_accepted', 'already_verified'].includes(status)) return data;
+      if (['failed', 'rejected', 'expired'].includes(status)) return { success: false, error: data?.message || data?.error || 'Payment failed.', ...data };
+    }
+    return { success: false, error: 'Payment failed. No matching Android SMS arrived within 2 minutes.' };
+  }
   function openPopup() {
     setPopupStep('methods');
     setPopupMessage('');
@@ -1832,6 +1863,16 @@ function CheckoutForm({ websites, onSubmit, message }) {
       setPopupMessage(paymentVerificationMessage(result));
     } else {
       setPopupMessage(result.message || 'Waiting for Android SMS confirmation. This popup will fail after 2 minutes without a matching SMS.');
+      const requestId = result.pendingVerification?.id || result.requestId;
+      const finalResult = await waitForServerConfirmation(requestId);
+      if (!finalResult || popupStep === 'failed') return;
+      if (finalResult.success && ['verified', 'manual_accepted', 'already_verified'].includes(String(finalResult.status || '').toLowerCase())) {
+        setPopupStep('success');
+        setPopupMessage(paymentVerificationMessage(finalResult));
+      } else {
+        setPopupStep('failed');
+        setPopupMessage(finalResult.error || finalResult.message || 'Payment failed.');
+      }
     }
   }
   const minuteText = `${Math.floor(countdown / 60)}:${String(countdown % 60).padStart(2, '0')}`;
