@@ -613,6 +613,8 @@ function App() {
         order_id: payload.orderId,
         seller_name: payload.sellerName,
         buyer_name: payload.buyerName,
+        payment_method: payload.walletProvider,
+        receiver_number: payload.receiverNumber,
         return_url: payload.returnUrl
       }
     });
@@ -1850,7 +1852,7 @@ function CheckoutForm({ websites, onSubmit, onPollStatus, message }) {
     setSubmitting(true);
     setPopupStep('waiting');
     setPopupMessage('Android SMS listener is waiting for sender number, amount, and receive time match.');
-    const result = await onSubmit({ ...form, payerNumber: cleanPayerNumber, paymentTime: new Date().toISOString(), walletProvider: selectedWallet?.provider || selectedWallet?.id });
+    const result = await onSubmit({ ...form, payerNumber: cleanPayerNumber, paymentTime: new Date().toISOString(), walletProvider: selectedWallet?.provider || selectedWallet?.id, receiverNumber: selectedWallet?.number || '' });
     setSubmitting(false);
     if (!result?.success) {
       setPopupStep('failed');
@@ -2013,12 +2015,12 @@ function AndroidCard({ client, response, devices = [], websites = [] }) {
 
 function TransactionTable({ items = [] }) {
   if (!items.length) return <div className="empty-state">No merchant payment history yet. Verify a payment from Payment Link; it will auto-approve when sender number, amount, and time match.</div>;
-  return <div className="table-wrap"><table><thead><tr><th>#</th><th>Domain</th><th>Sender</th><th>Order</th><th>Amount</th><th>Status</th></tr></thead><tbody>{items.map((item, index) => <tr key={item.id || item.transaction_id}><td>{index + 1}</td><td>{item.domain || '-'}</td><td><strong>{item.payerNumber || '-'}</strong><small>{item.buyerName || item.sellerName || formatPaymentReference(item.transaction_id) || ''}</small></td><td>{item.order_id || '-'}</td><td>{formatMoney(item.amount)}</td><td><span className={`status-chip ${transactionStatusClass(item.status)}`}>{formatBrandStatus(item.status || 'verified')}</span><small>{item.adminNote || ''}</small></td></tr>)}</tbody></table></div>;
+  return <div className="table-wrap"><table><thead><tr><th>#</th><th>Domain</th><th>Sender</th><th>Order</th><th>Amount</th><th>Method</th><th>Status</th></tr></thead><tbody>{items.map((item, index) => <tr key={item.id || item.transaction_id}><td>{index + 1}</td><td>{item.domain || '-'}</td><td><strong>{item.payerNumber || '-'}</strong><small>{item.buyerName || item.sellerName || formatPaymentReference(item.transaction_id) || ''}</small></td><td>{item.order_id || '-'}</td><td>{formatMoney(item.amount)}</td><td>{item.walletProvider || '-'}<small>{item.receiverNumber || ''}</small></td><td><span className={`status-chip ${transactionStatusClass(item.status)}`}>{formatBrandStatus(item.status || 'verified')}</span><small>{item.adminNote || ''}</small></td></tr>)}</tbody></table></div>;
 }
 
 function PaymentDataTable({ items = [] }) {
   if (!items.length) return <div className="empty-state">No Android SMS data yet. Login in the Android app and scan inbox.</div>;
-  return <div className="table-wrap"><table><thead><tr><th>#</th><th>Provider</th><th>Sender</th><th>Amount</th><th>Status</th><th>Received</th></tr></thead><tbody>{items.map((item, index) => <tr key={item.id || item.transaction_id}><td>{index + 1}</td><td>{item.provider || item.sender}</td><td><strong>{item.payerNumber || '-'}</strong><small>{formatPaymentReference(item.transaction_id)}</small></td><td>{formatMoney(item.amount)}</td><td><span className={`status-chip ${item.status === 'verified' ? 'success' : 'pending'}`}>{item.status}</span></td><td>{formatDate(item.receivedAt || item.createdAt)}</td></tr>)}</tbody></table></div>;
+  return <div className="table-wrap"><table><thead><tr><th>#</th><th>Provider</th><th>Sender</th><th>Amount</th><th>Status</th><th>Received</th><th>Raw SMS</th></tr></thead><tbody>{items.map((item, index) => <tr key={item.id || item.transaction_id}><td>{index + 1}</td><td>{item.provider || item.sender}</td><td><strong>{item.payerNumber || '-'}</strong><small>{formatPaymentReference(item.transaction_id)}</small></td><td>{formatMoney(item.amount)}</td><td><span className={`status-chip ${item.status === 'verified' ? 'success' : 'pending'}`}>{item.status}</span></td><td>{formatDate(item.receivedAt || item.createdAt)}</td><td className="admin-message-cell">{item.rawMessage || item.raw_message || '-'}</td></tr>)}</tbody></table></div>;
 }
 
 function InvoiceTable({ items = [] }) {
