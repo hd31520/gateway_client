@@ -1446,6 +1446,7 @@ function WalletCard({ label, value, sub, tone }) { return <article className={`w
 function MiniStat({ label, value, sub }) { return <article className="mini-stat-card"><span>{label}</span><strong>{value}</strong><small>{sub}</small></article>; }
 
 function OverviewContent({ client, websites, stats, portalData, websiteMessage, checkoutMessage, response, onAddWebsite, onRenewWebsite, onVerifyPayment }) {
+  const merchantItems = portalData.merchantHistory?.length ? portalData.merchantHistory : portalData.transactions;
   return (
     <>
       <SummaryCards portalData={portalData} websites={websites} stats={stats} />
@@ -1456,7 +1457,7 @@ function OverviewContent({ client, websites, stats, portalData, websiteMessage, 
       </section>
       <section className="portal-grid-two"><WebsiteForm onSubmit={onAddWebsite} message={websiteMessage} adminPayment={portalData.adminPayment} /><CheckoutForm websites={websites} onSubmit={onVerifyPayment} message={checkoutMessage} /></section>
       <section className="portal-grid-two align-start"><WebsiteList websites={websites} onRenew={onRenewWebsite} /><AndroidCard client={client} response={response} devices={portalData.devices} websites={websites} /></section>
-      <section className="panel transaction-panel"><div className="section-title"><div><p className="eyebrow">Transaction Report</p><h2>Merchant payment history</h2></div><span className="pill">{portalData.transactions.length} records</span></div><TransactionTable items={portalData.transactions} /></section>
+      <section className="panel transaction-panel"><div className="section-title"><div><p className="eyebrow">Transaction Report</p><h2>Merchant payment history</h2></div><span className="pill">{merchantItems.length} records</span></div><TransactionTable items={merchantItems} /></section>
     </>
   );
 }
@@ -1545,10 +1546,11 @@ function PaymentLinkPanel({ websites, checkoutMessage, onVerifyPayment, portalDa
 }
 
 function TransactionsPanel({ portalData }) {
+  const merchantItems = portalData.merchantHistory?.length ? portalData.merchantHistory : portalData.transactions;
   return (
     <section className="panel">
       <div className="section-title"><div><p className="eyebrow">Transactions</p><h2>Merchant payment history</h2></div><span className="pill">{portalData.summary.pendingMerchantVerifications} pending</span></div>
-      <TransactionTable items={portalData.transactions} />
+      <TransactionTable items={merchantItems} />
     </section>
   );
 }
