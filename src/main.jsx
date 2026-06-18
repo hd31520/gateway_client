@@ -1,4 +1,4 @@
-﻿
+
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
@@ -1785,13 +1785,16 @@ function checkoutWalletOptions(site) {
   const configuredWallets = Array.isArray(site?.wallets) ? site.wallets : Array.isArray(site?.paymentMethods) ? site.paymentMethods : [];
   const source = configuredWallets.length ? configuredWallets : [{ provider: site?.walletProvider, number: site?.walletNumber, receiverName: site?.receiverName }];
   return source.map((wallet, index) => {
-    const provider = String(wallet.provider || wallet.walletProvider || wallet.type || 'bkash').toLowerCase();
+    const provider = (typeof wallet === 'string' ? wallet : (wallet.provider || wallet.walletProvider || wallet.type || 'bkash')).toLowerCase();
     const configured = checkoutWalletMeta[provider] || checkoutWalletMeta.other;
+    const number = typeof wallet === 'string' 
+      ? (site?.walletNumber || '') 
+      : (wallet.number || wallet.walletNumber || wallet.account || site?.walletNumber || '');
     return {
       id: `${provider}-${index}`,
       provider,
-      number: wallet.number || wallet.walletNumber || wallet.account || '',
-      receiverName: wallet.receiverName || site?.receiverName || site?.name || site?.domain || 'Merchant',
+      number,
+      receiverName: (typeof wallet === 'object' && wallet.receiverName) || site?.receiverName || site?.name || site?.domain || 'Merchant',
       ...configured
     };
   });
