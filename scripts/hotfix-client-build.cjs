@@ -220,5 +220,11 @@ replaceOnce(
   'make popup submit race-safe'
 );
 
+replaceOnce(
+  "  if (configured) return FALLBACK_GATEWAY_API_URL;\n  return window.location.origin.replace(/\\/+$/, '');",
+  "  if (configured) return FALLBACK_GATEWAY_API_URL;\n  const origin = window.location.origin.replace(/\\/+$/, '');\n  const host = window.location.hostname.toLowerCase();\n  if (host.includes('gateway-client') || host.endsWith('.vercel.app')) return FALLBACK_GATEWAY_API_URL;\n  return origin;",
+  'use gateway server fallback on deployed client host'
+);
+
 fs.writeFileSync(filePath, source, 'utf8');
 console.log('[hotfix] Client build hotfix completed');
