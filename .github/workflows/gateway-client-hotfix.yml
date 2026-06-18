@@ -1,0 +1,244 @@
+name: Gateway Client One Time Hotfix
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/gateway-client-hotfix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-main-js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch src/main.jsx
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          path = Path('src/main.jsx')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once(source, old, new, label):
+              if old not in source:
+                  raise SystemExit(f'Missing target block: {label}')
+              return source.replace(old, new, 1)
+
+          text = replace_once(
+              text,
+              "import React, { useEffect, useMemo, useState } from 'react';",
+              "import React, { useEffect, useMemo, useRef, useState } from 'react';",
+              'React import useRef'
+          )
+
+          text = replace_once(
+              text,
+              "function OverviewContent({ client, websites, stats, portalData, websiteMessage, checkoutMessage, response, onAddWebsite, onRenewWebsite, onVerifyPayment, onPollPaymentStatus }) {",
+              "function OverviewContent({ client, websites, stats, portalData, websiteMessage, checkoutMessage, response, onAddWebsite, onRenewWebsite, onEditWebsite, onVerifyPayment, onPollPaymentStatus }) {",
+              'OverviewContent onEditWebsite prop'
+          )
+
+          text = replace_once(
+              text,
+              "  const [submitting, setSubmitting] = useState(false);\n  useEffect(() => { if (!form.websiteId && websites[0]?.id) setForm((current) => ({ ...current, websiteId: websites[0].id })); }, [websites, form.websiteId]);",
+              "  const [submitting, setSubmitting] = useState(false);\n  const popupRunRef = useRef(0);\n  useEffect(() => { if (!form.websiteId && websites[0]?.id) setForm((current) => ({ ...current, websiteId: websites[0].id })); }, [websites, form.websiteId]);",
+              'popupRunRef state'
+          )
+
+          old_timer = """  useEffect(() => {
+    if (!popupOpen || popupStep !== 'waiting') return undefined;
+    setCountdown(120);
+    const timer = window.setInterval(() => {
+      setCountdown((current) => {
+        if (current <= 1) {
+          window.clearInterval(timer);
+          setPopupStep('failed');
+          setPopupMessage('Payment failed. No matching Android SMS arrived within 2 minutes.');
+          return 0;
+        }
+        return current - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [popupOpen, popupStep]);"""
+          new_timer = """  useEffect(() => {
+    if (!popupOpen || popupStep !== 'waiting') return undefined;
+
+    const runId = popupRunRef.current;
+    setCountdown(120);
+
+    const timer = window.setInterval(() => {
+      setCountdown((current) => {
+        if (popupRunRef.current !== runId) {
+          window.clearInterval(timer);
+          return current;
+        }
+
+        if (current <= 1) {
+          window.clearInterval(timer);
+          popupRunRef.current += 1;
+          setPopupStep('failed');
+          setPopupMessage('Payment failed. No matching Android SMS arrived within 2 minutes.');
+          return 0;
+        }
+
+        return current - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [popupOpen, popupStep]);"""
+          text = replace_once(text, old_timer, new_timer, 'popup countdown effect')
+
+          old_wait = """  async function waitForServerConfirmation(requestId) {
+    if (!requestId || !onPollStatus) return null;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      const data = await onPollStatus({ websiteId: form.websiteId, requestId });
+      const status = String(data?.status || '').toLowerCase();
+      if (['verified', 'manual_accepted', 'already_verified'].includes(status)) return data;
+      if (['failed', 'rejected', 'expired'].includes(status)) return { success: false, error: data?.message || data?.error || 'Payment failed.', ...data };
+    }
+    return { success: false, error: 'Payment failed. No matching Android SMS arrived within 2 minutes.' };
+  }"""
+          new_wait = """  async function waitForServerConfirmation(requestId, runId) {
+    if (!requestId || !onPollStatus) return null;
+
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      if (popupRunRef.current !== runId) return null;
+
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+
+      if (popupRunRef.current !== runId) return null;
+
+      const data = await onPollStatus({ websiteId: form.websiteId, requestId });
+      const status = String(data?.status || '').toLowerCase();
+      if (['verified', 'manual_accepted', 'already_verified'].includes(status)) return data;
+      if (['failed', 'rejected', 'expired'].includes(status)) return { success: false, error: data?.message || data?.error || 'Payment failed.', ...data };
+    }
+
+    return { success: false, error: 'Payment failed. No matching Android SMS arrived within 2 minutes.' };
+  }"""
+          text = replace_once(text, old_wait, new_wait, 'waitForServerConfirmation')
+
+          old_open = """  function openPopup() {
+    setPopupStep('methods');
+    setPopupMessage('');
+    setSubmitting(false);
+    setPopupOpen(true);
+  }"""
+          new_open = """  function openPopup() {
+    popupRunRef.current += 1;
+    setPopupStep('methods');
+    setPopupMessage('');
+    setSubmitting(false);
+    setPopupOpen(true);
+  }"""
+          text = replace_once(text, old_open, new_open, 'openPopup')
+
+          old_submit = """  async function submitPopup() {
+    setSubmitting(true);
+    setPopupStep('waiting');
+    setPopupMessage('Android SMS listener is waiting for sender number, amount, and receive time match.');
+    const result = await onSubmit({ ...form, payerNumber: cleanPayerNumber, paymentTime: new Date().toISOString(), walletProvider: selectedWallet?.provider || selectedWallet?.id, receiverNumber: selectedWallet?.number || '' });
+    setSubmitting(false);
+    if (!result?.success) {
+      setPopupStep('failed');
+      setPopupMessage(result?.error || result?.message || 'Payment verification failed.');
+      return;
+    }
+    const status = String(result.status || '').toLowerCase();
+    if (['verified', 'manual_accepted', 'already_verified'].includes(status)) {
+      setPopupStep('success');
+      setPopupMessage(paymentVerificationMessage(result));
+    } else {
+      setPopupMessage(result.message || 'Waiting for Android SMS confirmation. This popup will fail after 2 minutes without a matching SMS.');
+      const requestId = result.pendingVerification?.id || result.requestId;
+      const finalResult = await waitForServerConfirmation(requestId);
+      if (!finalResult || popupStep === 'failed') return;
+      if (finalResult.success && ['verified', 'manual_accepted', 'already_verified'].includes(String(finalResult.status || '').toLowerCase())) {
+        setPopupStep('success');
+        setPopupMessage(paymentVerificationMessage(finalResult));
+      } else {
+        setPopupStep('failed');
+        setPopupMessage(finalResult.error || finalResult.message || 'Payment failed.');
+      }
+    }
+  }"""
+          new_submit = """  async function submitPopup() {
+    const runId = popupRunRef.current + 1;
+    popupRunRef.current = runId;
+
+    setSubmitting(true);
+    setPopupStep('waiting');
+    setPopupMessage('Android SMS listener is waiting for sender number, amount, and receive time match.');
+
+    try {
+      const result = await onSubmit({
+        ...form,
+        payerNumber: cleanPayerNumber,
+        paymentTime: new Date().toISOString(),
+        walletProvider: selectedWallet?.provider || selectedWallet?.id,
+        receiverNumber: selectedWallet?.number || ''
+      });
+
+      if (popupRunRef.current !== runId) return;
+
+      if (!result?.success) {
+        setPopupStep('failed');
+        setPopupMessage(result?.error || result?.message || 'Payment verification failed.');
+        return;
+      }
+
+      const status = String(result.status || '').toLowerCase();
+      if (['verified', 'manual_accepted', 'already_verified'].includes(status)) {
+        setPopupStep('success');
+        setPopupMessage(paymentVerificationMessage(result));
+        return;
+      }
+
+      setPopupMessage(result.message || 'Waiting for Android SMS confirmation. This popup will fail after 2 minutes without a matching SMS.');
+      const requestId = result.pendingVerification?.id || result.requestId;
+      const finalResult = await waitForServerConfirmation(requestId, runId);
+
+      if (popupRunRef.current !== runId || !finalResult) return;
+
+      if (finalResult.success && ['verified', 'manual_accepted', 'already_verified'].includes(String(finalResult.status || '').toLowerCase())) {
+        setPopupStep('success');
+        setPopupMessage(paymentVerificationMessage(finalResult));
+      } else {
+        setPopupStep('failed');
+        setPopupMessage(finalResult.error || finalResult.message || 'Payment failed.');
+      }
+    } catch (error) {
+      if (popupRunRef.current === runId) {
+        setPopupStep('failed');
+        setPopupMessage(error?.message || 'Payment verification failed.');
+      }
+    } finally {
+      if (popupRunRef.current === runId) {
+        setSubmitting(false);
+      }
+    }
+  }"""
+          text = replace_once(text, old_submit, new_submit, 'submitPopup')
+
+          path.write_text(text, encoding='utf-8')
+          PY
+      - name: Commit hotfix and remove one-time workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/gateway-client-hotfix.yml
+          git add src/main.jsx
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Fix brand edit and checkout popup polling"
+          git push
