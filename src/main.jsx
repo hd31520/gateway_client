@@ -584,13 +584,14 @@ function App() {
   async function editWebsite(websiteId, formData) {
     setWebsiteMessage('Updating website...');
     const result = await api('/client/websites', { method: 'PUT', auth: true, body: { id: websiteId, ...formData } });
-    if (!result.ok) {
-      setWebsiteMessage(errorMessage(result.data, 'Website update failed'));
-      return false;
+    if (!result.ok || !result.data.success) {
+      const errorMsg = errorMessage(result.data, 'Website update failed');
+      setWebsiteMessage(errorMsg);
+      return { success: false, error: errorMsg };
     }
     setWebsiteMessage(result.data.message || 'Brand updated successfully.');
     await loadClient();
-    return true;
+    return { success: true };
   }
 
   async function renewWebsite(site, payerNumber, siteCount = 1, months = 1) {
@@ -2009,18 +2010,18 @@ function WebsiteCard({ site, onRenew, onEdit }) {
     async function handleSave(e) {
       e.preventDefault();
       setEditError('Saving changes...');
-      const success = await onEdit(site.id, {
+      const res = await onEdit(site.id, {
         name: editName.trim(),
         domain: editDomain.trim(),
         walletProvider: editProvider,
         walletNumber: editNumber.trim(),
         receiverName: editReceiverName.trim()
       });
-      if (success) {
+      if (res.success) {
         setIsEditing(false);
         setEditError('');
       } else {
-        setEditError('Failed to update brand. Make sure details are valid.');
+        setEditError(res.error || 'Failed to update brand. Make sure details are valid.');
       }
     }
     return (
