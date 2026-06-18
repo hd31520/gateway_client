@@ -581,6 +581,18 @@ function App() {
     return true;
   }
 
+  async function editWebsite(websiteId, formData) {
+    setWebsiteMessage('Updating website...');
+    const result = await api('/client/websites', { method: 'PUT', auth: true, body: { id: websiteId, ...formData } });
+    if (!result.ok) {
+      setWebsiteMessage(errorMessage(result.data, 'Website update failed'));
+      return false;
+    }
+    setWebsiteMessage(result.data.message || 'Brand updated successfully.');
+    await loadClient();
+    return true;
+  }
+
   async function renewWebsite(site, payerNumber, siteCount = 1, months = 1) {
     const sc = Number(siteCount || 1) || 1;
     const duration = Number(months || 1) || 1;
@@ -687,6 +699,7 @@ function App() {
         onAuth={authenticate}
         onAddWebsite={addWebsite}
         onRenewWebsite={renewWebsite}
+        onEditWebsite={editWebsite}
         onVerifyPayment={verifyPayment}
         onPollPaymentStatus={pollPaymentStatus}
         onSaveSettings={saveSettings}
@@ -1452,7 +1465,7 @@ function DashboardContent(props) {
       {props.activeMenu === 'Affiliates' ? <AffiliatesPanel client={props.client} portalData={data} /> : null}
       {props.activeMenu === 'Support Tickets' ? <SupportPanel portalData={data} onCreateTicket={props.onCreateTicket} /> : null}
       {props.activeMenu === 'Plans' ? <PlansPanel portalData={data} /> : null}
-      {props.activeMenu === 'My Plan' ? <MyPlanPanel websites={props.websites} renewals={data.renewals} onRenew={props.onRenewWebsite} /> : null}
+      {props.activeMenu === 'My Plan' ? <MyPlanPanel websites={props.websites} renewals={data.renewals} onRenew={props.onRenewWebsite} onEdit={props.onEditWebsite} /> : null}
       {props.activeMenu === 'Currency' ? <CurrencyPanel settings={data.settings} onSave={props.onSaveSettings} /> : null}
       {props.activeMenu === 'Android App' ? <AndroidPanel client={props.client} response={props.response} portalData={data} /> : null}
       {props.activeMenu === 'Home Page' ? <HomePagePanel portalData={data} /> : null}
@@ -1478,7 +1491,7 @@ function OverviewContent({ client, websites, stats, portalData, websiteMessage, 
         <MiniStat label="Unpaid Invoices" value={portalData.summary.unpaidInvoices} sub={`${portalData.summary.dueWebsites} websites need renewal`} />
       </section>
       <section className="portal-grid-two"><WebsiteForm onSubmit={onAddWebsite} message={websiteMessage} adminPayment={portalData.adminPayment} /><CheckoutForm websites={websites} onSubmit={onVerifyPayment} onPollStatus={onPollPaymentStatus} message={checkoutMessage} /></section>
-      <section className="portal-grid-two align-start"><WebsiteList websites={websites} onRenew={onRenewWebsite} /><AndroidCard client={client} response={response} devices={portalData.devices} websites={websites} /></section>
+      <section className="portal-grid-two align-start"><WebsiteList websites={websites} onRenew={onRenewWebsite} onEdit={onEditWebsite} /><AndroidCard client={client} response={response} devices={portalData.devices} websites={websites} /></section>
       <section className="panel transaction-panel"><div className="section-title"><div><p className="eyebrow">Transaction Report</p><h2>Merchant payment history</h2></div><span className="pill">{merchantItems.length} records</span></div><TransactionTable items={merchantItems} /></section>
     </>
   );
@@ -1595,11 +1608,11 @@ function DataPanel({ portalData }) {
   );
 }
 
-function BrandsPanel({ websites, websiteMessage, onAddWebsite, onRenewWebsite, portalData }) {
+function BrandsPanel({ websites, websiteMessage, onAddWebsite, onRenewWebsite, onEditWebsite, portalData }) {
   return (
     <section className="portal-grid-two align-start">
       <WebsiteForm onSubmit={onAddWebsite} message={websiteMessage} adminPayment={portalData.adminPayment} />
-      <WebsiteList websites={websites} onRenew={onRenewWebsite} />
+      <WebsiteList websites={websites} onRenew={onRenewWebsite} onEdit={onEditWebsite} />
     </section>
   );
 }
@@ -1644,10 +1657,10 @@ function PlansPanel({ portalData }) {
   return <PlansGrid plans={portalData.plans} />;
 }
 
-function MyPlanPanel({ websites, renewals, onRenew }) {
+function MyPlanPanel({ websites, renewals, onRenew, onEdit }) {
   return (
     <section className="portal-grid-two align-start">
-      <WebsiteList websites={websites} onRenew={onRenew} />
+      <WebsiteList websites={websites} onRenew={onRenew} onEdit={onEdit} />
       <RenewalList renewals={renewals} />
     </section>
   );
@@ -1959,18 +1972,26 @@ function CheckoutForm({ websites, onSubmit, onPollStatus, message }) {
     </form>
   );
 }
-function WebsiteList({ websites, onRenew }) {
+function WebsiteList({ websites, onRenew, onEdit }) {
   return (
     <section className="panel website-panel"><div className="section-title compact-title"><div><p className="eyebrow">My Plan</p><h2>Your Brands</h2></div><span className="pill">SMS auto approval</span></div>
-      {!websites.length ? <div className="empty-state">No websites yet. Add your first domain above.</div> : <div className="website-list">{websites.map((site) => <WebsiteCard key={site.id} site={site} onRenew={onRenew} />)}</div>}
+      {!websites.length ? <div className="empty-state">No websites yet. Add your first domain above.</div> : <div className="website-list">{websites.map((site) => <WebsiteCard key={site.id} site={site} onRenew={onRenew} onEdit={onEdit} />)}</div>}
     </section>
   );
 }
 
-function WebsiteCard({ site, onRenew }) {
+function WebsiteCard({ site, onRenew, onEdit }) {
   const [payerNumber, setPayerNumber] = useState('');
   const [plan, setPlan] = useState('1:1');
   const [message, setMessage] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(site.name || '');
+  const [editDomain, setEditDomain] = useState(site.domain || '');
+  const [editProvider, setEditProvider] = useState(site.walletProvider || 'bkash');
+  const [editNumber, setEditNumber] = useState(site.walletNumber || '');
+  const [editReceiverName, setEditReceiverName] = useState(site.receiverName || '');
+  const [editError, setEditError] = useState('');
+
   const appDownloadUrl = absoluteDownloadUrl(site.appDownloadUrl);
   const unlocked = Boolean(site.androidAppEnabled || site.brandStatus === 'active');
   const actionLabel = unlocked ? 'Renew' : 'Activate';
@@ -1983,9 +2004,77 @@ function WebsiteCard({ site, onRenew }) {
     setMessage(resultMessage);
     if (/activated|applied|renewed|ready/i.test(resultMessage)) setPayerNumber('');
   }
+
+  if (isEditing) {
+    async function handleSave(e) {
+      e.preventDefault();
+      setEditError('Saving changes...');
+      const success = await onEdit(site.id, {
+        name: editName.trim(),
+        domain: editDomain.trim(),
+        walletProvider: editProvider,
+        walletNumber: editNumber.trim(),
+        receiverName: editReceiverName.trim()
+      });
+      if (success) {
+        setIsEditing(false);
+        setEditError('');
+      } else {
+        setEditError('Failed to update brand. Make sure details are valid.');
+      }
+    }
+    return (
+      <article className="website-card editing-card">
+        <form onSubmit={handleSave} className="renew-form" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="website-card-top" style={{ marginBottom: '4px' }}>
+            <div><h3>Edit Brand</h3><p className="subtle">{site.domain}</p></div>
+            <button type="button" className="ghost-button small text-danger" onClick={() => setIsEditing(false)}>Cancel</button>
+          </div>
+          
+          <label style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Brand Name</label>
+          <input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="My Shop" required style={{ width: '100%', padding: '6px' }} />
+          
+          <label style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Domain</label>
+          <input value={editDomain} onChange={(e) => setEditDomain(e.target.value)} placeholder="example.com" required style={{ width: '100%', padding: '6px' }} />
+          
+          <label style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Wallet Provider</label>
+          <select value={editProvider} onChange={(e) => setEditProvider(e.target.value)} required style={{ width: '100%', padding: '6px' }}>
+            <option value="bkash">bKash</option>
+            <option value="nagad">Nagad</option>
+            <option value="rocket">Rocket</option>
+            <option value="upay">Upay</option>
+            <option value="bank">Bank</option>
+            <option value="other">Other</option>
+          </select>
+          
+          <label style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Receiver Number</label>
+          <input value={editNumber} onChange={(e) => setEditNumber(e.target.value.replace(/\D/g, ''))} placeholder="017XXXXXXXX" required style={{ width: '100%', padding: '6px' }} />
+          
+          <label style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Receiver Account Name</label>
+          <input value={editReceiverName} onChange={(e) => setEditReceiverName(e.target.value)} placeholder="Shop owner name" style={{ width: '100%', padding: '6px' }} />
+          
+          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+            <button type="submit" style={{ flex: 1 }}>Save Changes</button>
+            <button type="button" className="secondary" style={{ flex: 1 }} onClick={() => setIsEditing(false)}>Cancel</button>
+          </div>
+          {editError ? <p className="message" style={{ color: 'var(--accent)', marginTop: '4px' }}>{editError}</p> : null}
+        </form>
+      </article>
+    );
+  }
+
   return (
     <article className="website-card">
-      <div className="website-card-top"><div><h3>{site.name || site.domain}</h3><p className="subtle">{site.domain}</p></div><span className={`badge ${unlocked ? 'active' : ''}`}>{formatBrandStatus(site.brandStatus)}</span></div>
+      <div className="website-card-top">
+        <div>
+          <h3>{site.name || site.domain}</h3>
+          <p className="subtle">{site.domain}</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button type="button" className="ghost-button small" onClick={() => setIsEditing(true)}>Edit</button>
+          <span className={`badge ${unlocked ? 'active' : ''}`}>{formatBrandStatus(site.brandStatus)}</span>
+        </div>
+      </div>
       <div className="brand-detail-grid">
         <div><span>Receiver</span><strong>{site.walletProvider ? `${site.walletProvider} ${site.walletNumber}` : 'Not set'}</strong></div>
         <div><span>Charge</span><strong>{formatMoney(site.brandCharge || site.monthlyFee)}</strong></div>
