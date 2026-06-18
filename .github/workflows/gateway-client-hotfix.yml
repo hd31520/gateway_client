@@ -2,8 +2,7 @@ name: Gateway Client One Time Hotfix
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - .github/workflows/gateway-client-hotfix.yml
 
@@ -19,53 +18,31 @@ jobs:
         run: |
           python <<'PY'
           from pathlib import Path
+          import re
 
-          path = Path('src/main.jsx')
-          text = path.read_text(encoding='utf-8')
+          p = Path('src/main.jsx')
+          s = p.read_text(encoding='utf-8')
 
-          def replace_once(source, old, new, label):
-              if old not in source:
-                  raise SystemExit(f'Missing target block: {label}')
-              return source.replace(old, new, 1)
+          def one(old, new, label):
+              global s
+              if old not in s:
+                  raise SystemExit(f'Missing target: {label}')
+              s = s.replace(old, new, 1)
 
-          text = replace_once(
-              text,
-              "import React, { useEffect, useMemo, useState } from 'react';",
+          one("import React, { useEffect, useMemo, useState } from 'react';",
               "import React, { useEffect, useMemo, useRef, useState } from 'react';",
-              'React import useRef'
-          )
+              'import useRef')
 
-          text = replace_once(
-              text,
-              "function OverviewContent({ client, websites, stats, portalData, websiteMessage, checkoutMessage, response, onAddWebsite, onRenewWebsite, onVerifyPayment, onPollPaymentStatus }) {",
+          one("function OverviewContent({ client, websites, stats, portalData, websiteMessage, checkoutMessage, response, onAddWebsite, onRenewWebsite, onVerifyPayment, onPollPaymentStatus }) {",
               "function OverviewContent({ client, websites, stats, portalData, websiteMessage, checkoutMessage, response, onAddWebsite, onRenewWebsite, onEditWebsite, onVerifyPayment, onPollPaymentStatus }) {",
-              'OverviewContent onEditWebsite prop'
-          )
+              'OverviewContent prop')
 
-          text = replace_once(
-              text,
-              "  const [submitting, setSubmitting] = useState(false);\n  useEffect(() => { if (!form.websiteId && websites[0]?.id) setForm((current) => ({ ...current, websiteId: websites[0].id })); }, [websites, form.websiteId]);",
+          one("  const [submitting, setSubmitting] = useState(false);\n  useEffect(() => { if (!form.websiteId && websites[0]?.id) setForm((current) => ({ ...current, websiteId: websites[0].id })); }, [websites, form.websiteId]);",
               "  const [submitting, setSubmitting] = useState(false);\n  const popupRunRef = useRef(0);\n  useEffect(() => { if (!form.websiteId && websites[0]?.id) setForm((current) => ({ ...current, websiteId: websites[0].id })); }, [websites, form.websiteId]);",
-              'popupRunRef state'
-          )
+              'popupRunRef')
 
-          old_timer = """  useEffect(() => {
-    if (!popupOpen || popupStep !== 'waiting') return undefined;
-    setCountdown(120);
-    const timer = window.setInterval(() => {
-      setCountdown((current) => {
-        if (current <= 1) {
-          window.clearInterval(timer);
-          setPopupStep('failed');
-          setPopupMessage('Payment failed. No matching Android SMS arrived within 2 minutes.');
-          return 0;
-        }
-        return current - 1;
-      });
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [popupOpen, popupStep]);"""
-          new_timer = """  useEffect(() => {
+          s = re.sub(r"  useEffect\(\(\) => \{\n    if \(!popupOpen \|\| popupStep !== 'waiting'\) return undefined;\n    setCountdown\(120\);\n    const timer = window\.setInterval\(\(\) => \{\n      setCountdown\(\(current\) => \{\n        if \(current <= 1\) \{\n          window\.clearInterval\(timer\);\n          setPopupStep\('failed'\);\n          setPopupMessage\('Payment failed\. No matching Android SMS arrived within 2 minutes\.'\);\n          return 0;\n        \}\n        return current - 1;\n      \}\);\n    \}, 1000\);\n    return \(\) => window\.clearInterval\(timer\);\n  \}, \[popupOpen, popupStep\]\);",
+          """  useEffect(() => {
     if (!popupOpen || popupStep !== 'waiting') return undefined;
 
     const runId = popupRunRef.current;
@@ -91,21 +68,10 @@ jobs:
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [popupOpen, popupStep]);"""
-          text = replace_once(text, old_timer, new_timer, 'popup countdown effect')
+  }, [popupOpen, popupStep]);""", s, count=1)
 
-          old_wait = """  async function waitForServerConfirmation(requestId) {
-    if (!requestId || !onPollStatus) return null;
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, 2000));
-      const data = await onPollStatus({ websiteId: form.websiteId, requestId });
-      const status = String(data?.status || '').toLowerCase();
-      if (['verified', 'manual_accepted', 'already_verified'].includes(status)) return data;
-      if (['failed', 'rejected', 'expired'].includes(status)) return { success: false, error: data?.message || data?.error || 'Payment failed.', ...data };
-    }
-    return { success: false, error: 'Payment failed. No matching Android SMS arrived within 2 minutes.' };
-  }"""
-          new_wait = """  async function waitForServerConfirmation(requestId, runId) {
+          s = re.sub(r"  async function waitForServerConfirmation\(requestId\) \{\n    if \(!requestId \|\| !onPollStatus\) return null;\n    for \(let attempt = 0; attempt < 60; attempt \+= 1\) \{\n      await new Promise\(\(resolve\) => window\.setTimeout\(resolve, 2000\)\);\n      const data = await onPollStatus\(\{ websiteId: form\.websiteId, requestId \}\);\n      const status = String\(data\?\.status \|\| ''\)\.toLowerCase\(\);\n      if \(\['verified', 'manual_accepted', 'already_verified'\]\.includes\(status\)\) return data;\n      if \(\['failed', 'rejected', 'expired'\]\.includes\(status\)\) return \{ success: false, error: data\?\.message \|\| data\?\.error \|\| 'Payment failed\.', \.\.\.data \};\n    \}\n    return \{ success: false, error: 'Payment failed\. No matching Android SMS arrived within 2 minutes\.' \};\n  \}",
+          """  async function waitForServerConfirmation(requestId, runId) {
     if (!requestId || !onPollStatus) return null;
 
     for (let attempt = 0; attempt < 60; attempt += 1) {
@@ -122,23 +88,21 @@ jobs:
     }
 
     return { success: false, error: 'Payment failed. No matching Android SMS arrived within 2 minutes.' };
-  }"""
-          text = replace_once(text, old_wait, new_wait, 'waitForServerConfirmation')
+  }""", s, count=1)
 
-          old_open = """  function openPopup() {
+          one("""  function openPopup() {
     setPopupStep('methods');
     setPopupMessage('');
     setSubmitting(false);
     setPopupOpen(true);
-  }"""
-          new_open = """  function openPopup() {
+  }""",
+          """  function openPopup() {
     popupRunRef.current += 1;
     setPopupStep('methods');
     setPopupMessage('');
     setSubmitting(false);
     setPopupOpen(true);
-  }"""
-          text = replace_once(text, old_open, new_open, 'openPopup')
+  }""", 'openPopup')
 
           old_submit = """  async function submitPopup() {
     setSubmitting(true);
@@ -225,9 +189,12 @@ jobs:
       }
     }
   }"""
-          text = replace_once(text, old_submit, new_submit, 'submitPopup')
+          one(old_submit, new_submit, 'submitPopup')
 
-          path.write_text(text, encoding='utf-8')
+          if s.count('popupRunRef') < 5:
+              raise SystemExit('Patch verification failed: popupRunRef not applied')
+
+          p.write_text(s, encoding='utf-8')
           PY
       - name: Commit hotfix and remove one-time workflow
         run: |
@@ -236,9 +203,6 @@ jobs:
           git rm .github/workflows/gateway-client-hotfix.yml
           git add src/main.jsx
           git diff --cached --check
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-            exit 0
-          fi
+          git diff --cached --quiet && echo "No changes" && exit 0
           git commit -m "Fix brand edit and checkout popup polling"
           git push
